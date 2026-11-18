@@ -1,0 +1,12 @@
+:root {
+  --navy: #0b1f3a;
+  --red: #e2231a;
+  --yellow: #ffcc00;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--navy);
+  -webkit-text-size-adjust: 100%;
+}
+html, body { margin: 0; height: 100dvh; overflow: hidden; background: #e8ecf1; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.maplibregl-ctrl-top-right { top: env(safe-area-inset-top); right: env(safe-area-inset-right); }
+.maplibregl-ctrl-group button { width: 36px; height: 36px; }

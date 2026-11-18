@@ -1,0 +1,7 @@
+{
+  "_readme": "Overlay hasil survei lapangan. stations.<KODE>: {platform, notes}. exits.<KODE:REF>: {leadsTo[], lift, escalator, notes}. Gambar ulang sendiri, jangan salin denah resmi MRT.",
+  "stations": {
+    "DKA": { "notes": "Terhubung ke KRL Stasiun Sudirman, KA Bandara (BNI City), dan LRT Jabodebek Dukuh Atas." }
+  },
+  "exits": {}
+}
