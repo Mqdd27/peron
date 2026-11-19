@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png', 'data/mrt.json'],
       manifest: {
-        name: 'Peron — Panduan Stasiun MRT Jakarta',
+        name: 'Peron — Panduan Transportasi Jakarta',
         short_name: 'Peron',
-        description: 'Pintu keluar, peron, dan kereta berikutnya di stasiun MRT Jakarta.',
+        description: 'Peta integrasi MRT, KRL, LRT, dan Transjakarta: jadwal, jalur, dan pintu keluar stasiun.',
         lang: 'id',
         theme_color: '#0b1f3a',
         background_color: '#0b1f3a',
