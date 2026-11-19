@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { haversine, projectToAxis, parseTimes } from '../src/lib/geo.js'
-import { jakartaNow, nextDepartures } from '../src/lib/time.js'
+import { haversine, projectToAxis, parseTimes, locateOnLine, nearestStop } from '../src/lib/geo.js'
+import { jakartaNow, nextDepartures, trainsNow } from '../src/lib/time.js'
 
 test('parseTimes trims seconds, dedupes, keeps after-midnight last', () => {
   assert.deepEqual(parseTimes('23:50:00; 05:06:30; 00:10:00; 05:06:30; '), ['05:06', '23:50', '00:10'])
@@ -38,4 +38,38 @@ test('nextDepartures picks weekday/weekend and handles end of day', () => {
   ])
   assert.deepEqual(nextDepartures(t, new Date('2026-11-21T22:00:00Z')), [{ time: '06:00', inMin: 60 }]) // Sun 05:00 WIB
   assert.deepEqual(nextDepartures(t, new Date('2026-11-18T17:00:00Z')), []) // 00:00 WIB, after last train
+})
+
+test('trainsNow places a train between stations from the timetable', () => {
+  const tt = (bhi, lbb = []) => ({ toBHI: { weekday: bhi, weekend: [] }, toLBB: { weekday: lbb, weekend: [] } })
+  const st = [
+    { code: 'A', timetable: tt(['08:00']) },
+    { code: 'B', timetable: tt(['08:04'], ['08:10']) },
+    { code: 'C', timetable: tt([], ['08:07']) },
+  ]
+  const at = (hhmm) => new Date(`2026-11-18T${hhmm}:00+07:00`) // Wednesday
+  assert.deepEqual(trainsNow(st, at('08:02')), [{ dir: 'toBHI', from: 'A', to: 'B', f: 0.5, eta: 484 }])
+  assert.deepEqual(trainsNow(st, at('08:05')).map((t) => t.from + t.to), ['BC']) // terminus hop = 2.5 min
+  assert.deepEqual(trainsNow(st, at('08:08')).map((t) => t.from + t.to), ['CB'])
+  assert.deepEqual(trainsNow(st, at('09:00')), [])
+})
+
+test('locateOnLine snaps a fix to the nearest segment', () => {
+  const st = [
+    { code: 'A', lat: -6.30, lon: 106.80 },
+    { code: 'B', lat: -6.28, lon: 106.80 },
+    { code: 'C', lat: -6.28, lon: 106.82 },
+  ]
+  const r = locateOnLine(st, { lat: -6.29, lon: 106.8005 }) // halfway A–B, ~55 m east
+  assert.equal(r.from + r.to, 'AB')
+  assert.ok(Math.abs(r.t - 0.5) < 0.01)
+  assert.ok(r.off > 40 && r.off < 70)
+  assert.equal(locateOnLine(st, { lat: -6.279, lon: 106.819 }).nearest.code, 'C')
+})
+
+test('nearestStop picks the closest stop across modes', () => {
+  const mrt = [{ code: 'A', name: 'A', lat: -6.30, lon: 106.80 }]
+  const krl = [{ name: 'K', mode: 'krl', lat: -6.25, lon: 106.80 }]
+  assert.equal(nearestStop(mrt, krl, { lat: -6.26, lon: 106.80 }).name, 'K')
+  assert.equal(nearestStop(mrt, krl, { lat: -6.29, lon: 106.80 }).code, 'A')
 })

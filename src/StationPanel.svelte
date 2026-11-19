@@ -1,4 +1,5 @@
 <script>
+  import { fly } from 'svelte/transition'
   import ExitSchematic from './ExitSchematic.svelte'
   import { sel, select } from './lib/state.svelte.js'
   import { nextDepartures } from './lib/time.js'
@@ -30,7 +31,12 @@
   const walkUrl = (e) => `https://www.google.com/maps/dir/?api=1&destination=${e.lat},${e.lon}&travelmode=walking`
 </script>
 
-<section class="panel" class:collapsed aria-label="Stasiun {station.name}">
+<section
+  class="panel"
+  class:collapsed
+  aria-label="Stasiun {station.name}"
+  in:fly={matchMedia('(prefers-reduced-motion: reduce)').matches ? { duration: 0 } : matchMedia('(min-width: 768px)').matches ? { x: -40, duration: 260 } : { y: 60, duration: 260 }}
+>
   <header>
     <button class="grab" onclick={() => (collapsed = !collapsed)} aria-label={collapsed ? 'Perbesar panel' : 'Perkecil panel'} aria-expanded={!collapsed}></button>
     <div class="title">

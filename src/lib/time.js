@@ -29,3 +29,27 @@ export function nextDepartures(table, date = new Date(), n = 3) {
     .filter((d) => d.inMin >= 0)
     .slice(0, n)
 }
+
+/**
+ * Approximate live MRT positions from the per-station departure tables.
+ * A train is "between A and B" from its departure at A until the next departure at B.
+ * Returns [{dir, from, to, f, eta}] with f in [0,1) along A→B and eta = departure minute at B (≈ arrival). Stations must be ordered LBB→BHI.
+ */
+export function trainsNow(stations, date = new Date()) {
+  const now = jakartaNow(date)
+  const pick = (t) => (now.weekend && t?.weekend?.length ? t.weekend : (t?.weekday ?? []))
+  const out = []
+  for (const [dir, order] of [['toBHI', stations], ['toLBB', [...stations].reverse()]]) {
+    for (let i = 0; i < order.length - 1; i++) {
+      const b = pick(order[i + 1].timetable[dir]).map(toMin)
+      for (const ta of pick(order[i].timetable[dir]).map(toMin)) {
+        if (ta > now.minutes || ta < now.minutes - 6) continue
+        // ponytail: terminus has no departure in this direction, so assume a 2.5 min hop.
+        const tb = b.find((t) => t > ta) ?? ta + 2.5
+        if (tb - ta > 6 || now.minutes >= tb) continue // gap too long = short-turn / no match
+        out.push({ dir, from: order[i].code, to: order[i + 1].code, f: (now.minutes - ta) / (tb - ta), eta: tb })
+      }
+    }
+  }
+  return out
+}

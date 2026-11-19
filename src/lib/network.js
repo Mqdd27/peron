@@ -2,6 +2,9 @@
 // Coordinates are schematic units shared with Schematic.svelte. Context only: these stations aren't tappable yet.
 // ponytail: hand-placed coordinates; generate from OSM + an octilinear layout once KRL/LRT become real data.
 
+// Which mode chip (MRT/KRL/LRT/TJ) each line belongs to.
+export const LINE_MODE = { A: 'krl', C: 'krl', R: 'krl', B: 'krl', T: 'krl', S: 'lrt', BK: 'lrt', CB: 'lrt' }
+
 export const LINES = [
   { id: 'A', name: 'KA Bandara Soekarno-Hatta', color: '#1d2160', d: 'M212,-190 V130 Q212,160 242,160 H690',
     ends: [{ x: 222, y: -196, a: 'start', t: 'Bandara Soekarno-Hatta ↑' }] },
@@ -40,7 +43,7 @@ export const STATIONS = [
   ['Kebayoran', 60, 470, l, { line: 'R' }],
   ['BNI City', 370, 166, b, { pill: [370, 160, 370, 172] }],
   ['Sudirman', 480, 172, t, { pill: [480, 172, 480, 172] }],
-  ['Dukuh Atas BSI', 500, 230, b, { pill: [500, 224, 500, 236] }],
+  ['Dukuh Atas BSI', 500, 230, b, { mode: 'lrt', pill: [500, 224, 500, 236] }],
   ['Manggarai', 690, 178, 'mg', { pill: [690, 160, 690, 196], big: true }],
   ['Gondangdia', 690, 10, r, { line: 'B' }],
   ['Cikini', 690, 80, r, { line: 'B' }],
@@ -52,7 +55,7 @@ export const STATIONS = [
   ['Tanjung Barat', 690, 770, r, { line: 'B' }],
   ['Lenteng Agung', 690, 840, r, { line: 'B' }],
   ['Proklamasi', 780, 110, t, { line: 'S', tick: [0, -1] }],
-  ['Matraman', 840, 110, t, { pill: [840, 110, 840, 110] }],
+  ['Matraman', 840, 110, t, { mode: 'lrt', pill: [840, 110, 840, 110] }],
   ['Matraman', 840, 172, b, { pill: [840, 172, 840, 172] }],
   ['Pramuka', 895, 110, t, { line: 'S', tick: [0, -1] }],
   ['Rawamangun', 985, 110, t, { line: 'S', tick: [0, -1] }],
@@ -64,19 +67,19 @@ export const STATIONS = [
   ['Kelapa Gading', 1080, -200, r, { pill: [1080, -200, 1080, -200], term: 'S' }],
   ['Jatinegara', 940, 172, b, { pill: [940, 172, 940, 172] }],
   ['Pondok Jati', 940, 40, l, { line: 'C' }],
-  ['Setiabudi', 560, 300, r, { pill: [540, 300, 566, 300] }],
-  ['Rasuna Said', 560, 360, r, { pill: [540, 360, 566, 360] }],
-  ['Kuningan', 560, 420, r, { pill: [540, 420, 566, 420] }],
-  ['Pancoran', 630, 490, t, { pill: [630, 484, 630, 496] }],
-  ['Cikoko', 740, 490, b, { pill: [740, 484, 740, 496] }],
-  ['Ciliwung', 800, 490, t, { pill: [800, 484, 800, 496] }],
-  ['Cawang', 876, 490, t, { pill: [876, 484, 876, 496] }],
+  ['Setiabudi', 560, 300, r, { mode: 'lrt', pill: [540, 300, 566, 300] }],
+  ['Rasuna Said', 560, 360, r, { mode: 'lrt', pill: [540, 360, 566, 360] }],
+  ['Kuningan', 560, 420, r, { mode: 'lrt', pill: [540, 420, 566, 420] }],
+  ['Pancoran', 630, 490, t, { mode: 'lrt', pill: [630, 484, 630, 496] }],
+  ['Cikoko', 740, 490, b, { mode: 'lrt', pill: [740, 484, 740, 496] }],
+  ['Ciliwung', 800, 490, t, { mode: 'lrt', pill: [800, 484, 800, 496] }],
+  ['Cawang', 876, 490, t, { mode: 'lrt', pill: [876, 484, 876, 496] }],
   ['Halim', 950, 484, t, { line: 'BK', tick: [0, -1] }],
   ['TMII', 876, 580, r, { line: 'CB' }],
   ['Kampung Rambutan', 876, 660, r, { line: 'CB' }],
   ['Ciracas', 876, 740, r, { line: 'CB' }],
   ['Harjamukti', 876, 820, r, { pill: [876, 820, 876, 820], term: 'CB' }],
-].map(([name, x, y, side, o]) => ({ name, x, y, side, ...o }))
+].map(([name, x, y, side, o]) => ({ name, x, y, side, ...o, mode: o.mode ?? LINE_MODE[o.line ?? o.term] ?? 'krl' }))
 
 // Walking/paid transfers between stations (grey bands, drawn under the lines).
 export const LINKS = [
@@ -137,20 +140,21 @@ export const BRT_HUBS = [
 ]
 
 // 3D landmarks (sprites rendered by lib/landmarks3d.js). x/y = centre, s = sprite size in schematic units.
+// near = real-world nearest stop: MRT code, a STATIONS name, or free text (schematic distance isn't geography).
 export const LANDMARKS = [
-  { name: 'Monas', model: 'monas', x: 330, y: -122, s: 120 },
-  { name: 'Grand Indonesia', model: 'mall', x: 252, y: -32, s: 60 },
-  { name: 'Gelora Bung Karno', model: 'stadium', x: 150, y: 382, s: 96 },
-  { name: 'Blok M Plaza', model: 'mall', x: 318, y: 588, s: 72 },
-  { name: 'Tebet Eco Park', model: 'park', x: 756, y: 345, s: 90 },
-  { name: 'TMII', model: 'pavilion', x: 1005, y: 600, s: 96 },
-  { name: 'Masjid Istiqlal', model: 'mosque', x: 585, y: -125, s: 100 },
-  { name: 'Pasar Tanah Abang', model: 'mall', x: 110, y: 38, s: 68 },
-  { name: 'Senayan City', model: 'mall', x: 382, y: 428, s: 62 },
-  { name: 'Pondok Indah Mall', model: 'mall', x: -145, y: 818, s: 70 },
-  { name: 'Bandara Halim', model: 'airport', x: 1050, y: 395, s: 110 },
-  { name: 'Kota Tua ↑', model: 'oldtown', x: 812, y: -165, s: 84 },
-  { name: 'Ragunan', model: 'zoo', x: 612, y: 590, s: 90 },
+  { name: 'Monas', near: 'Juanda', model: 'monas', x: 330, y: -122, s: 120 },
+  { name: 'Grand Indonesia', near: 'BHI', model: 'mall', x: 252, y: -32, s: 60 },
+  { name: 'Gelora Bung Karno', near: 'IST', model: 'stadium', x: 150, y: 382, s: 96 },
+  { name: 'Blok M Plaza', near: 'BLM', model: 'mall', x: 318, y: 588, s: 72 },
+  { name: 'Tebet Eco Park', near: 'Tebet', model: 'park', x: 756, y: 345, s: 90 },
+  { name: 'TMII', near: 'TMII', model: 'pavilion', x: 1005, y: 600, s: 96 },
+  { name: 'Masjid Istiqlal', near: 'Juanda', model: 'mosque', x: 585, y: -125, s: 100 },
+  { name: 'Pasar Tanah Abang', near: 'Tanah Abang', model: 'mall', x: 110, y: 38, s: 68 },
+  { name: 'Senayan City', near: 'SNY', model: 'mall', x: 382, y: 428, s: 62 },
+  { name: 'Pondok Indah Mall', near: 'LBB', model: 'mall', x: -145, y: 818, s: 70 },
+  { name: 'Bandara Halim', near: 'Halim', model: 'airport', x: 1050, y: 395, s: 110 },
+  { name: 'Kota Tua ↑', near: 'Stasiun Jakarta Kota (KRL Bogor)', model: 'oldtown', x: 812, y: -165, s: 84 },
+  { name: 'Ragunan', near: 'Transjakarta Koridor 6 (Ragunan)', model: 'zoo', x: 612, y: 590, s: 90 },
 ]
 
 // Background texture: rivers (soft blue, under everything) and neighbourhood names.
@@ -165,3 +169,12 @@ export const AREAS = [
   ['Menteng', 565, 55], ['Kemang', 440, 572], ['Kebayoran Baru', 135, 606], ['Cilandak', 95, 700],
   ['Kampung Melayu', 850, 252], ['Cempaka Putih', 1010, -110],
 ]
+
+// A real stop ({name, mode}, OSM/GTFS naming) → its drawn station/halte on the schematic, or undefined.
+const ALIAS = { 'Dukuh Atas Bank Syariah Indonesia': 'Dukuh Atas BSI', 'Taman Mini': 'TMII' }
+const DRAWN = [...STATIONS, ...BRT.flatMap((c) => c.halte.filter((h) => h[0]).map(([name, x, y]) => ({ name, x, y, mode: 'tj' })))]
+export function drawnStop({ name, mode }) {
+  const n = (ALIAS[name] ?? name).toLowerCase()
+  const hit = (f) => DRAWN.find((s) => s.mode === mode && f(s.name.toLowerCase())) ?? DRAWN.find((s) => f(s.name.toLowerCase()))
+  return hit((a) => a === n) ?? hit((a) => n.startsWith(a) || a.startsWith(n))
+}

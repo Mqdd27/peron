@@ -38,3 +38,31 @@ export function parseTimes(str) {
     (a, b) => key(a).localeCompare(key(b)),
   )
 }
+
+/**
+ * Snap a GPS fix onto the line through ordered stations (each {code, lat, lon}).
+ * Returns {from, to, t, off} — segment endpoints, fraction along it, metres off the line —
+ * plus nearest: {code, dist} by straight-line distance.
+ */
+export function locateOnLine(stations, p) {
+  let best = null
+  for (let i = 0; i < stations.length - 1; i++) {
+    const a = stations[i], b = stations[i + 1]
+    const [bx, by] = local(a, b), [px, py] = local(a, p)
+    const t = Math.max(0, Math.min(1, (px * bx + py * by) / (bx * bx + by * by || 1)))
+    const off = Math.hypot(px - t * bx, py - t * by)
+    if (!best || off < best.off) best = { from: a.code, to: b.code, t, off }
+  }
+  const near = stations.reduce((x, y) => (haversine(y, p) < haversine(x, p) ? y : x))
+  return { ...best, nearest: { code: near.code, dist: haversine(near, p) } }
+}
+
+// Nearest stop of any mode: MRT stations (with code) plus OSM stops [{name, mode, lat, lon}].
+export function nearestStop(stations, stops, p) {
+  let best = null
+  for (const s of [...stations.map((x) => ({ name: x.name, mode: 'mrt', code: x.code, lat: x.lat, lon: x.lon })), ...stops]) {
+    const dist = haversine(s, p)
+    if (!best || dist < best.dist) best = { ...s, dist }
+  }
+  return best
+}
