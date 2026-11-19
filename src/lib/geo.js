@@ -66,3 +66,13 @@ export function nearestStop(stations, stops, p) {
   }
   return best
 }
+
+// Schematic projection: km around Dukuh Atas, radially compressed (asinh) so the dense core keeps room
+// while Bogor/Rangkasbitung still fit. a = radius (km) where compression starts, u = schematic units per km.
+const SCH = { lat: -6.2, lon: 106.823, a: 4, u: 85 } // a: km where compression starts; smaller = tighter outskirts
+export function project({ lat, lon }) {
+  const x = (lon - SCH.lon) * 110.57 * Math.cos((SCH.lat * Math.PI) / 180), y = (SCH.lat - lat) * 110.57
+  const r = Math.hypot(x, y)
+  const k = r ? ((SCH.a * Math.asinh(r / SCH.a)) / r) * SCH.u : SCH.u
+  return { x: x * k, y: y * k }
+}

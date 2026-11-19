@@ -73,3 +73,16 @@ test('nearestStop picks the closest stop across modes', () => {
   assert.equal(nearestStop(mrt, krl, { lat: -6.26, lon: 106.80 }).name, 'K')
   assert.equal(nearestStop(mrt, krl, { lat: -6.29, lon: 106.80 }).code, 'A')
 })
+
+test('schematic: dedupe keeps branches, drops reversed/contained patterns', async () => {
+  const { dedupe } = await import('../scripts/schematic.mjs')
+  const out = dedupe([['a', 'b', 'c', 'd'], ['d', 'c', 'b', 'a'], ['b', 'c'], ['a', 'b', 'x'], ['z']])
+  assert.deepEqual(out, [['a', 'b', 'c', 'd'], ['a', 'b', 'x']])
+})
+
+test('schematic: projection is monotonic and compresses the outskirts', async () => {
+  const { project } = await import('../src/lib/geo.js')
+  const at = (km) => project({ lat: -6.2 - km / 110.57, lon: 106.823 }).y
+  assert.ok(at(1) > 0 && at(10) > at(1) && at(40) > at(10))
+  assert.ok(at(40) - at(30) < (at(2) - at(1)) * 10) // 10 km out there < 10× 1 km in the core
+})

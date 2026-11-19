@@ -80,6 +80,36 @@ const MODELS = {
     tree(g, 2.3, 1.7, 0.8)
     tree(g, -2.6, 1.9, 0.7, C.leaf2)
   },
+  church(g) {
+    g.add(box(5, 0.3, 5, C.grass))
+    g.add(box(2.4, 1.8, 3.6, C.stone, 0, 0.3, 0.4))
+    g.add(cyl(0.05, 1.75, 1.1, 4, C.steel, 0, 2.1, 0.4, Math.PI / 4))
+    for (const x of [-0.8, 0.8]) {
+      g.add(box(0.8, 3.6, 0.8, C.stone, x, 0.3, -1.6))
+      g.add(mesh(new THREE.ConeGeometry(0.56, 1.8, 4), C.steel, [x, 4.8, -1.6], Math.PI / 4))
+    }
+    tree(g, 1.9, 1.8, 0.7)
+    tree(g, -1.9, 1.6, 0.8, C.leaf2)
+  },
+  campus(g) {
+    g.add(box(6, 0.3, 5, C.grass))
+    g.add(box(4.6, 1.6, 1.6, C.white, 0, 0.3, -1))
+    g.add(box(1.6, 1.6, 2.4, C.white, -1.5, 0.3, 1))
+    g.add(cyl(0.05, 3.2, 0.9, 4, C.roof, 0, 1.9, -1, Math.PI / 4))
+    g.add(box(0.7, 3.4, 0.7, C.roof, 1.6, 0.3, 1.2)) // rektorat tower
+    g.add(box(1.4, 0.05, 1.2, C.water, 0.6, 0.3, 1.4))
+    tree(g, 2.5, -0.2, 0.7)
+    tree(g, -2.6, 1.9, 0.8, C.leaf2)
+  },
+  terminal(g) {
+    g.add(box(6, 0.3, 4.6, 0x8e949e))
+    for (const x of [-2.2, 0, 2.2]) g.add(box(0.2, 1.6, 0.2, C.steel, x, 0.3, -1.2))
+    g.add(box(5.4, 0.18, 1.8, C.white, 0, 1.9, -1.2)) // canopy
+    const bus = box(3, 1, 1, 0x1f5fbf, -0.4, 0.3, 1.1)
+    g.add(bus)
+    g.add(box(2.6, 0.32, 1.04, C.glass, -0.4, 0.85, 1.1))
+    tree(g, 2.4, 1.3, 0.6)
+  },
   airport(g) {
     g.add(box(8, 0.25, 5, C.grassDark))
     const runway = box(7.4, 0.06, 1, 0x5d6573, 0, 0.25, 1.2)

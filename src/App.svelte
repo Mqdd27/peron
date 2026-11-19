@@ -3,10 +3,10 @@
   import Map from './Map.svelte'
   import StationPanel from './StationPanel.svelte'
   import StopPanel from './StopPanel.svelte'
+  import LinePanel from './LinePanel.svelte'
   import Schematic from './Schematic.svelte'
-  import { sel, select, openStop, gps, toggleGps, net } from './lib/state.svelte.js'
+  import { sel, select, openStop, gps, toggleGps, net, drawnStop, schematic } from './lib/state.svelte.js'
   import { nearestStop } from './lib/geo.js'
-  import { drawnStop } from './lib/network.js'
 
   let data = $state(null)
   let view = $state('skema')
@@ -79,7 +79,7 @@
   <p class="msg">Gagal memuat data ({error}). Coba muat ulang.</p>
 {:else if data}
   <Map {data} hidden={view === 'skema'} />
-  {#if view === 'skema'}<Schematic {data} />{/if}
+  {#if view === 'skema' && schematic()}<Schematic {data} sch={schematic()} />{/if}
   <div class="seg" role="group" aria-label="Tampilan">
     <button aria-pressed={view === 'skema'} onclick={() => (view = 'skema')}>Skema</button>
     <button aria-pressed={view === 'peta'} onclick={() => (view = 'peta')}>Peta</button>
@@ -111,6 +111,8 @@
     <StationPanel {data} {station} />
   {:else if sel.stop}
     <StopPanel {data} stop={sel.stop} />
+  {:else if sel.line}
+    <LinePanel {data} line={sel.line} />
   {:else}
     <button class="find" aria-expanded={finding} onclick={() => (finding = !finding)}>
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6 17 17" /></svg>

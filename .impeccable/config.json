@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/LinePanel.svelte"
+        ],
+        "createdAt": "2026-11-19T07:06:54.619Z",
+        "reason": "Claude: the coloured left border on the stop list is the route line itself (transit strip-map convention), not a card accent"
+      }
+    ]
+  }
+}

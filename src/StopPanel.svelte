@@ -2,10 +2,10 @@
   // Detail panel for a KRL / LRT station or Transjakarta halte, shaped like the MRT StationPanel.
   // Only data that is actually published is shown: TJ intervals (GTFS), lines and entrances (OSM).
   import { fly } from 'svelte/transition'
-  import { select, openStop, sel, net } from './lib/state.svelte.js'
+  import { select, openStop, sel, net, schematic } from './lib/state.svelte.js'
   import { haversine } from './lib/geo.js'
   import { jakartaNow } from './lib/time.js'
-  import { LINES, BRT } from './lib/network.js'
+  import { LINES } from './lib/network.js'
 
   /** @type {{ data: any, stop: any }} */
   let { data, stop } = $props()
@@ -25,7 +25,7 @@
   let corridors = $derived.by(() => {
     const t = jakartaNow(now), day = t.weekend ? 'we' : 'wd', h = Math.floor(t.minutes / 60) % 24
     return (stop.routes ?? '').split(',').filter(Boolean).map((id) => ({
-      id, name: net.tjNames[id] ?? '', color: BRT.find((c) => c.id === id)?.color ?? COLOR.tj, head: net.tjHeadway?.[id]?.[day]?.[h],
+      id, name: net.tjNames[id] ?? '', color: schematic()?.lines.find((l) => l.mode === 'tj' && l.id === id)?.color ?? COLOR.tj, head: net.tjHeadway?.[id]?.[day]?.[h],
     }))
   })
   let nearby = $derived(

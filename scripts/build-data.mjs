@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { haversine, parseTimes } from '../src/lib/geo.js'
-import { LINES } from '../src/lib/network.js'
+import { LINES, LINE_MODE } from '../src/lib/network.js'
+import { buildSchematic, dedupe } from './schematic.mjs'
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
 const OFFLINE = process.argv.includes('--offline')
+// --only=tj-gtfs,osm  → refetch just these caches, read the rest from disk
+const ONLY = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',')
 const UA = 'Peron/0.1 (MRT Jakarta station guide; build script)'
 const BBOX = '-6.33,106.76,-6.17,106.84'
 
@@ -30,7 +33,7 @@ const STATIONS = [
 
 async function cached(name, fetcher) {
   const file = here(`./.cache-${name}.json`)
-  if (!OFFLINE) {
+  if (!OFFLINE && (!ONLY || ONLY.includes(name))) {
     try {
       const data = await fetcher()
       await writeFile(file, JSON.stringify(data))
@@ -63,7 +66,11 @@ async function overpass(q, timeout = 60) {
   }
   for (const [i, url] of MIRRORS.entries()) {
     try {
-      return await fetchJson(url, init, 2)
+      const d = await fetchJson(url, init, 2)
+      // some mirrors lag months behind (a stale one once renamed LRT Jakarta's ref); skip those
+      const age = Date.now() - Date.parse(d.osm3s?.timestamp_osm_base ?? 0)
+      if (age > 30 * 864e5) throw new Error(`stale mirror (${d.osm3s?.timestamp_osm_base})`)
+      return d
     } catch (e) {
       if (i === MIRRORS.length - 1) throw e
       console.warn(`  ${e.message}, trying mirror`)
@@ -159,7 +166,8 @@ console.log(`mrt.json: ${stations.length} stations, ${stations.reduce((n, s) => 
 for (const s of stations) if (!s.exits.length || !(s.timetable.toLBB.weekday.length + s.timetable.toBHI.weekday.length)) console.warn(`  ${s.code}: exits=${s.exits.length} ttLBB=${s.timetable.toLBB.weekday.length} ttBHI=${s.timetable.toBHI.weekday.length}`)
 
 // --- Other modes (issue #3): KRL, airport rail, LRT and Transjakarta BRT corridors → public/data/network.json ---
-const NET_BBOX = '-6.37,106.68,-6.12,106.95'
+// Greater Jakarta: Rangkasbitung (W) · Cikarang (E) · Bogor/Nambo (S) · Soekarno-Hatta & Tanjung Priok (N)
+const NET_BBOX = '-6.62,106.22,-6.05,107.18'
 const net = await cached('osm-network', () =>
   overpass(`(
     relation["route"="train"]["network"~"KAI Commuter|Railink|Bandara",i](${NET_BBOX});
@@ -243,25 +251,40 @@ const tj = await cached('tj-gtfs', async () => {
   // BRT halte: every stop a corridor 1–14 trip calls at, folded onto its parent station.
   const stop = Object.fromEntries(rows('stops.txt').map((c) => [c[0], { name: c[2], lat: +c[4], lon: +c[5], parent: c[9] }]))
   const halte = {}
-  for (const [tripId, , stopId] of rows('stop_times.txt')) {
-    const route = trip[tripId]?.route
+  const seqCol = execFileSync('unzip', ['-p', zip, 'stop_times.txt'], { maxBuffer: 1e8 }).toString().split(/\r?\n/, 1)[0].split(',').indexOf('stop_sequence')
+  const calls = {} // trip → [[sequence, halte id]]
+  for (const c of rows('stop_times.txt')) {
+    const [tripId, , stopId] = c, route = trip[tripId]?.route
     if (!route || !/^\d+$/.test(route) || +route > 14 || !stop[stopId]) continue
     const id = stop[stopId].parent || stopId, st = stop[id] ?? stop[stopId]
     ;(halte[id] ??= { name: st.name.replace(/^Halte\s+/i, ''), lat: +st.lat.toFixed(5), lon: +st.lon.toFixed(5), routes: new Set() }).routes.add(route)
+    ;(calls[tripId] ??= []).push([+c[seqCol], id])
   }
+  const ids = Object.keys(halte)
   const stops = Object.values(halte).map((h) => ({ ...h, routes: [...h.routes].sort((a, b) => a - b) }))
+  // Ordered halte (indexes into stops) of every distinct trip pattern per corridor, for the schematic.
+  const seqs = {}
+  for (const [tripId, cs] of Object.entries(calls)) {
+    const seq = cs.sort((a, b) => a[0] - b[0]).map(([, id]) => ids.indexOf(id)).filter((v, i, a) => v !== a[i - 1])
+    const list = (seqs[trip[tripId].route] ??= [])
+    if (!list.some((q) => q.join() === seq.join())) list.push(seq)
+  }
   const names = Object.fromEntries(rows('routes.txt').filter((c) => /^\d+$/.test(c[0]) && +c[0] <= 14).map((c) => [c[0], c[3].replace(/ - /g, ' – ')]))
-  return { headway, stops, names }
+  const colCol = execFileSync('unzip', ['-p', zip, 'routes.txt'], { maxBuffer: 1e8 }).toString().split(/\r?\n/, 1)[0].split(',').indexOf('route_color')
+  const colors = Object.fromEntries(rows('routes.txt').filter((c) => /^\d+$/.test(c[0]) && +c[0] <= 14 && /^[0-9a-f]{6}$/i.test(c[colCol] ?? '')).map((c) => [c[0], `#${c[colCol]}`]))
+  return { headway, stops, names, seqs, colors }
 })
 const tjHeadway = tj.headway
 
 // One halte per place: merge directional/numbered platforms ("Harmoni Arah Utara", "Gambir 2") within 500 m,
 // unioning their corridors and averaging the position.
 const tjStops = []
+const tjMerged = [] // tj.stops index → merged halte
 for (const h of tj.stops) {
   const name = h.name.replace(/\s+(Arah\s+\S+|\d+)$/i, '').trim()
   const m = tjStops.find((x) => x.name === name && haversine(x, h) < 500)
-  if (!m) { tjStops.push({ ...h, name, n: 1 }); continue }
+  if (!m) { tjStops.push({ ...h, name, n: 1 }); tjMerged.push(tjStops.at(-1)); continue }
+  tjMerged.push(m)
   m.lat = +((m.lat * m.n + h.lat) / (m.n + 1)).toFixed(5)
   m.lon = +((m.lon * m.n + h.lon) / (m.n + 1)).toFixed(5)
   m.n++
@@ -306,6 +329,40 @@ const network = {
   stops: { type: 'FeatureCollection', features: stopFeatures },
 }
 await writeFile(here('../public/data/network.json'), JSON.stringify(network))
+
+// --- Generated schematic of the whole network → public/data/schematic.json ---
+const schNodes = new Map()
+const node = (mode, name, lat, lon, code) => {
+  const id = `${mode}:${code ?? name}`
+  if (!schNodes.has(id)) schNodes.set(id, { id, name, mode, lat, lon, code })
+  return id
+}
+const fpt = (f) => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })
+const railSeqs = {}
+for (const rel of net.elements.filter((e) => e.type === 'relation' && e.tags.route !== 'bus')) {
+  const mode = modeOf(rel.tags), id = ref(rel.tags), seq = []
+  for (const m of rel.members) {
+    if (m.type !== 'node' || !/stop/.test(m.role) || m.lat == null) continue
+    let best, bd = 400
+    for (const f of railStops) if (f.properties.mode === mode && haversine(m, fpt(f)) < bd) (bd = haversine(m, fpt(f))), (best = f)
+    if (!best) continue
+    const nid = node(mode, best.properties.name, fpt(best).lat, fpt(best).lon)
+    if (seq.at(-1) !== nid) seq.push(nid)
+  }
+  ;(railSeqs[id] ??= []).push(seq)
+}
+const TJ_FALLBACK = ['#d6202a', '#3d4fa0', '#7b2c86', '#5a3a8a', '#e57e25', '#3da447', '#c6334b', '#d8368a', '#2f8f83', '#8b1e3f', '#1d6fb8', '#00a99d', '#7b4ea3', '#f39c12']
+const schLines = [
+  ...LINES.filter((l) => railSeqs[l.id]).map((l) => ({ ...l, mode: LINE_MODE[l.id], seqs: dedupe(railSeqs[l.id]) })),
+  { id: 'M', mode: 'mrt', name: 'MRT Lin Utara–Selatan', color: '#e2231a', seqs: [[...stations].reverse().map((s) => node('mrt', s.name, s.lat, s.lon, s.code))] }, // BHI first
+  ...Object.keys(tj.seqs).sort((a, b) => a - b).map((id) => ({
+    id, mode: 'tj', name: tj.names[id] ?? `Koridor ${id}`, color: tj.colors?.[id] ?? TJ_FALLBACK[id - 1],
+    seqs: dedupe(tj.seqs[id].map((q) => q.map((i) => tjMerged[i]).map((h) => node('tj', h.name, h.lat, h.lon)).filter((v, i, a) => v !== a[i - 1]))),
+  })),
+]
+const sch = buildSchematic(schNodes, schLines)
+await writeFile(here('../public/data/schematic.json'), JSON.stringify(sch))
+console.log(`schematic.json: ${sch.nodes.length} nodes, ${sch.lines.length} lines (${schLines.map((l) => `${l.id}:${l.seqs.length}`).join(' ')}), ${sch.links.length} links; ${(JSON.stringify(sch).length / 1e3).toFixed(0)} kB`)
 const count = (m) => routeFeatures.filter((f) => f.properties.mode === m).length + '/' + stopFeatures.filter((f) => f.properties.mode === m).length
 console.log(`TJ headway @08 WIB (wd): ${Object.entries(tjHeadway).map(([k, v]) => `${k}:${v.wd?.[8]}`).join(' ')}`)
 console.log(`network.json: ways/stops krl ${count('krl')}, lrt ${count('lrt')}, tj ${count('tj')}; ${(JSON.stringify(network).length / 1e3).toFixed(0)} kB`)
