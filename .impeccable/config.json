@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-11-19T07:06:54.619Z",
         "reason": "Claude: the coloured left border on the stop list is the route line itself (transit strip-map convention), not a card accent"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/src/RoutePanel.svelte"
+        ],
+        "createdAt": "2026-11-19T08:13:53.983Z",
+        "reason": "Claude: the coloured left border on each ride leg is the line being ridden (transit strip-map convention, same as LinePanel's stop list), not a card accent"
       }
     ]
   }

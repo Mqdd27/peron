@@ -1,15 +1,18 @@
 <script>
   import { fly } from 'svelte/transition'
-  import Map from './Map.svelte'
   import StationPanel from './StationPanel.svelte'
   import StopPanel from './StopPanel.svelte'
   import LinePanel from './LinePanel.svelte'
+  import RoutePanel from './RoutePanel.svelte'
   import Schematic from './Schematic.svelte'
   import { sel, select, openStop, gps, toggleGps, net, drawnStop, schematic } from './lib/state.svelte.js'
   import { nearestStop } from './lib/geo.js'
 
   let data = $state(null)
   let view = $state('skema')
+  // maplibre (~1 MB JS + tiles) loads only once Peta is first opened; Skema-only visits never pay for it
+  let mapOn = $state(false)
+  $effect(() => { if (view === 'peta') mapOn = true })
   let error = $state(null)
 
   fetch(`${import.meta.env.BASE_URL}data/mrt.json`)
@@ -78,7 +81,9 @@
 {#if error}
   <p class="msg">Gagal memuat data ({error}). Coba muat ulang.</p>
 {:else if data}
-  <Map {data} hidden={view === 'skema'} />
+  {#if mapOn}
+    {#await import('./Map.svelte') then { default: MapView }}<MapView {data} hidden={view === 'skema'} />{/await}
+  {/if}
   {#if view === 'skema' && schematic()}<Schematic {data} sch={schematic()} />{/if}
   <div class="seg" role="group" aria-label="Tampilan">
     <button aria-pressed={view === 'skema'} onclick={() => (view = 'skema')}>Skema</button>
@@ -113,11 +118,19 @@
     <StopPanel {data} stop={sel.stop} />
   {:else if sel.line}
     <LinePanel {data} line={sel.line} />
+  {:else if sel.route}
+    <RoutePanel {data} />
   {:else}
-    <button class="find" aria-expanded={finding} onclick={() => (finding = !finding)}>
-      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6 17 17" /></svg>
-      Cari stasiun
-    </button>
+    <div class="dock">
+      <button class="find" aria-expanded={finding} onclick={() => (finding = !finding)}>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6 17 17" /></svg>
+        Cari stasiun
+      </button>
+      <button class="find" onclick={() => ((finding = false), (sel.route = { from: near?.name ?? '', to: '', result: null }))}>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="15" r="2.2" /><circle cx="15" cy="5" r="2.2" /><path d="M7 15h5.5a3 3 0 0 0 0-6h-5a3 3 0 0 1 0-6H13" /></svg>
+        Rute
+      </button>
+    </div>
     {#if finding}
       <nav class="list" aria-label="Cari stasiun dan halte" in:fly={{ y: 24, duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220 }}>
         <div class="head">
@@ -192,10 +205,8 @@
     .bar, .gps { left: calc(50% + 195px); right: auto; translate: -50% 0; max-width: none; }
   }
   .msg { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; color: var(--navy); }
-  .find {
-    position: fixed; z-index: 2; left: 50%; translate: -50% 0; bottom: calc(16px + env(safe-area-inset-bottom));
-    min-height: 44px; padding: 0 18px; gap: 8px; border: 0; font-weight: 600; box-shadow: 0 4px 16px rgb(11 31 58 / 0.22);
-  }
+  .dock { position: fixed; z-index: 2; left: 50%; translate: -50% 0; bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }
+  .find { min-height: 44px; padding: 0 18px; gap: 8px; border: 0; font-weight: 600; box-shadow: 0 4px 16px rgb(11 31 58 / 0.22); white-space: nowrap; }
   .find[aria-expanded='true'] { background: var(--navy); color: #fff; }
   .find svg, .x svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
   .list {
@@ -232,7 +243,7 @@
   .name { flex: 1; }
   .code { font-size: 11px; color: #7a8599; font-weight: 700; text-align: right; }
   @media (min-width: 768px) {
-    .find { left: 16px; translate: none; bottom: 16px; }
+    .dock { left: 16px; translate: none; bottom: 16px; }
     .list { left: 16px; right: auto; bottom: 72px; width: 340px; max-height: calc(100dvh - 160px); border-radius: 16px; box-shadow: 0 4px 24px rgb(11 31 58 / 0.18); }
   }
 </style>

@@ -325,10 +325,11 @@ const network = {
   tjHeadway,
   tjNames: tj.names,
   routes: Object.values(routeNames),
-  lines: { type: 'FeatureCollection', features: routeFeatures },
   stops: { type: 'FeatureCollection', features: stopFeatures },
 }
 await writeFile(here('../public/data/network.json'), JSON.stringify(network))
+// line shapes are only drawn on Peta, so they live in their own file the map fetches lazily (~1 MB)
+await writeFile(here('../public/data/network-lines.json'), JSON.stringify({ type: 'FeatureCollection', features: routeFeatures }))
 
 // --- Generated schematic of the whole network → public/data/schematic.json ---
 const schNodes = new Map()

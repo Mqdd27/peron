@@ -4,7 +4,10 @@ import { jakartaNow } from './time.js'
 // focus = a non-MRT stop picked from search: {name, mode, lat, lon, sub, k}.
 // stop = an open non-MRT station/halte (an item of net.stops).
 // line = open line panel: {title, rows: [{id, color, tj, title, sub, stops: [{name, mode}]}]} (tapped from the schematic).
-export const sel = $state({ station: null, exit: null, mode: null, me: null, focus: null, stop: null, line: null })
+// route = open route panel: {from, to, result} where result comes from lib/route.js findRoute (+ lines: ids).
+export const sel = $state({ station: null, exit: null, mode: null, me: null, focus: null, stop: null, line: null, route: null })
+// Line ids to spotlight: the open line panel's lines; a found route dims every line ([]) and draws its own stretch.
+export const focusIds = () => sel.line?.rows.map((r) => r.id) ?? (sel.route?.result ? [] : null)
 
 export function select(station, exit = null) {
   sel.station = station

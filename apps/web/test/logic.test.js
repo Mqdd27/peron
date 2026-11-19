@@ -86,3 +86,23 @@ test('schematic: projection is monotonic and compresses the outskirts', async ()
   assert.ok(at(1) > 0 && at(10) > at(1) && at(40) > at(10))
   assert.ok(at(40) - at(30) < (at(2) - at(1)) * 10) // 10 km out there < 10× 1 km in the core
 })
+
+test('findRoute: cross-mode trips with direction and transfers', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { buildGraph, findRoute, placeNodes } = await import('../src/lib/route.js')
+  const { LANDMARKS } = await import('../src/lib/network.js')
+  const g = buildGraph(JSON.parse(readFileSync(new URL('../public/data/schematic.json', import.meta.url))))
+  const trip = (a, b) => findRoute(g, placeNodes(g, a, LANDMARKS), placeNodes(g, b, LANDMARKS))
+  const says = (r) => r.legs.map((l) => (l.type === 'ride' ? `${l.line}:${g.node.get(l.to).name}:${l.toward}` : 'walk'))
+
+  // landmark → nearest MRT station, one ride, heading north
+  assert.deepEqual(says(trip('Fatmawati', 'Gelora Bung Karno')), ['M:Istora:Bundaran HI'])
+  // MRT → walk at Dukuh Atas → KRL, not the airport train
+  const bm = says(trip('Blok M', 'Manggarai'))
+  assert.equal(bm[0], 'M:Dukuh Atas:Bundaran HI')
+  assert.equal(bm[1], 'walk')
+  assert.ok(!bm.some((s) => s.startsWith('A:')))
+  // round-trip TJ corridor: direction is the far terminus, not the start
+  assert.ok(says(trip('Ragunan', 'Monas'))[0].endsWith(':Galunggung'))
+  assert.equal(trip('Fatmawati', 'Tidak Ada'), null)
+})

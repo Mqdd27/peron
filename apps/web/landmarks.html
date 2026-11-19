@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Landmark sprites</title>
+<!-- Dev-only (npm run dev → /landmarks.html): renders the three.js landmark models. After changing a model in
+     src/lib/landmarks3d.js, click each image to download it and save it into public/landmarks/. Not part of the build. -->
+<div id="out"></div>
+<script type="module">
+  import { renderLandmarks } from '/src/lib/landmarks3d.js'
+  import { LANDMARKS } from '/src/lib/network.js'
+  window.sprites = renderLandmarks([...new Set(LANDMARKS.map((l) => l.model))])
+  for (const [k, v] of Object.entries(window.sprites))
+    document.getElementById('out').insertAdjacentHTML('beforeend', `<a download="${k}.png" href="${v}" title="${k}"><img src="${v}" width="160" alt="${k}" /></a>`)
+</script>

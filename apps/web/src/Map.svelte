@@ -2,8 +2,9 @@
   import { untrack } from 'svelte'
   import { personSvg } from './lib/network.js'
   import * as maplibregl from 'maplibre-gl'
+  import 'maplibre-gl/dist/maplibre-gl.css'
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-  import { sel, select, openStop, openLine, net, netReady } from './lib/state.svelte.js'
+  import { sel, select, openStop, openLine, net, netReady, focusIds } from './lib/state.svelte.js'
 
   maplibregl.setWorkerUrl(workerUrl)
 
@@ -18,8 +19,8 @@
   const isDesktop = () => matchMedia('(min-width: 768px)').matches
   const padding = () =>
     isDesktop()
-      ? { left: 420, top: 60, right: 60, bottom: 60 }
-      : { left: 40, right: 40, top: 70, bottom: Math.round(innerHeight * 0.6) + 20 }
+      ? { left: 420, top: 120, right: 80, bottom: 60 } // top: clear the view toggle + mode chips
+      : { left: 40, right: 40, top: 130, bottom: Math.round(innerHeight * 0.6) + 20 }
 
   $effect(() => {
     const line = data.line.color
@@ -81,16 +82,21 @@
       img.onload = () => m.addImage('me', img, { pixelRatio: 2 })
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(personSvg())
       m.addLayer({ id: 'me-dot', type: 'symbol', source: 'me', layout: { 'icon-image': 'me', 'icon-size': 0.75, 'icon-anchor': 'bottom', 'icon-offset': [0, 3], 'icon-allow-overlap': true, 'icon-ignore-placement': true } })
+      // Found route: only the ridden stretches, straight between stops (ponytail: not snapped to track geometry).
+      m.addSource('route', { type: 'geojson', data: fc([]) })
+      m.addLayer({ id: 'route-casing', type: 'line', source: 'route', filter: ['!', ['get', 'walk']], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 7, 16, 14] } })
+      m.addLayer({ id: 'route-line', type: 'line', source: 'route', filter: ['!', ['get', 'walk']], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 16, 8] } })
+      m.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['get', 'walk'], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#55627a', 'line-width': 3, 'line-dasharray': [0.1, 2] } })
       m.addSource('focus', { type: 'geojson', data: fc([]) })
       m.addLayer({ id: 'focus-ring', type: 'circle', source: 'focus', paint: { 'circle-radius': 14, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#0b1f3a', 'circle-stroke-width': 3 } })
       map = m
 
       // Other modes (issue #3): KRL, LRT, Transjakarta BRT from OSM, under the MRT layers.
-      netReady
-        .then((net) => {
-          if (!net) return
+      Promise.all([netReady, fetch(`${import.meta.env.BASE_URL}data/network-lines.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
+        .then(([net, lines]) => {
+          if (!net || !lines) return
           const byMode = (tj, rail) => ['match', ['get', 'mode'], 'tj', tj, rail]
-          m.addSource('net-lines', { type: 'geojson', data: net.lines })
+          m.addSource('net-lines', { type: 'geojson', data: lines })
           m.addSource('net-stops', { type: 'geojson', data: net.stops })
           m.addLayer({ id: 'net-line', type: 'line', source: 'net-lines', layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 11, byMode(1.2, 2), 16, byMode(3, 5)] } }, 'track-casing')
@@ -103,7 +109,7 @@
           m.addLayer({ id: 'net-stop-label', type: 'symbol', source: 'net-stops', minzoom: 14, filter: ['==', ['get', 'mode'], 'tj'],
             layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-optional': true },
             paint: { 'text-color': '#3b4352', 'text-halo-color': '#fff', 'text-halo-width': 1.4 } }, 'station-dot')
-          applyMode(m, sel.mode, sel.line)
+          applyMode(m, sel.mode, focusIds())
         })
     })
 
@@ -136,8 +142,7 @@
   })
 
   // Focus: dim everything outside the chosen mode, or outside the lines of the open line panel.
-  function applyMode(m, mode, line) {
-    const ids = line?.rows.map((r) => r.id)
+  function applyMode(m, mode, ids) {
     const o = (mine) => (ids ? (ids.includes('M') ? 1 : 0.12) : mode === null || mode === mine ? 1 : 0.12)
     const onStop = ids && ['any', ...ids.map((id) => ['in', `,${id},`, ['concat', ',', ['coalesce', ['get', 'lines'], ''], ',', ['coalesce', ['get', 'routes'], ''], ',']])]
     const net = ids ? ['case', ['has', 'ref'], ['case', ['in', ['get', 'ref'], ['literal', ids]], 1, 0.08], ['case', onStop, 1, 0.12]]
@@ -153,8 +158,19 @@
     set('net-stop-label-rail', ['text-opacity'], net)
   }
   $effect(() => {
-    const mode = sel.mode, line = sel.line
-    if (map) applyMode(map, mode, line)
+    const mode = sel.mode, ids = focusIds()
+    if (map && !hidden) applyMode(map, mode, ids) // restyled when Peta opens; skips shader rebuilds behind Skema
+  })
+
+  $effect(() => {
+    const geo = sel.line ? null : sel.route?.result?.geo
+    if (!map || hidden) return // drawn when Peta opens; no GPU work while Skema is showing
+    map.getSource('route').setData(fc((geo ?? []).filter((l) => l.coords.length > 1).map((l) => ({ type: 'Feature', properties: { walk: l.walk, color: l.color }, geometry: { type: 'LineString', coordinates: l.coords } }))))
+    const all = (geo ?? []).flatMap((l) => l.coords)
+    if (all.length > 1) {
+      const lon = all.map((c) => c[0]), lat = all.map((c) => c[1])
+      requestAnimationFrame(() => (map.resize(), map.fitBounds([[Math.min(...lon), Math.min(...lat)], [Math.max(...lon), Math.max(...lat)]], { padding: padding(), maxZoom: 15, duration: 600 }))) // after a Skema → Peta switch has sized the map
+    }
   })
 
   // GPS dot; fly to it on the first fix after turning location on.
