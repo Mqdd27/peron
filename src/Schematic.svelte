@@ -5,7 +5,7 @@
   import { sel, select, net, drawnStop, lineData, tjHead } from './lib/state.svelte.js'
   import { trainsNow, jakartaNow } from './lib/time.js'
   import { locateOnLine, nearestStop, project } from './lib/geo.js'
-  import { LANDMARKS, DISTRICTS } from './lib/network.js'
+  import { LANDMARKS, DISTRICTS, PERSON } from './lib/network.js'
 
   /** @type {{ data: any, sch: any }} */
   let { data, sch } = $props()
@@ -519,8 +519,9 @@
 
     {#if me}
       <g class="me" class:far={me.far} transform="translate({me.x},{me.y})" role="img" aria-label="Lokasi Anda (perkiraan)">
-        <circle r="10" class="me-halo" />
-        <circle r="7" class="me-dot" />
+        <ellipse rx="10" ry="3.5" class="me-halo" />
+        <ellipse cy="0.5" rx="6" ry="2" class="me-shadow" />
+        <g class="me-dot"><path d={PERSON.body} /><circle cy={PERSON.head.cy} r={PERSON.head.r} /></g>
       </g>
     {/if}
 
@@ -653,7 +654,8 @@
   .lhit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; outline: none; }
   .lhit.off { pointer-events: none; }
   svg :is(path, line, text, g) { transition: opacity 0.25s; }
-  .me-dot { fill: #2563eb; stroke: #fff; stroke-width: 3; }
+  .me-dot { fill: #2563eb; stroke: #fff; stroke-width: 1.8; stroke-linejoin: round; paint-order: stroke; }
+  .me-shadow { fill: rgb(11 31 58 / 0.3); }
   .me.far .me-dot { fill: #8aa6d8; }
   .me-halo { fill: rgb(37 99 235 / 0.25); transform-box: fill-box; transform-origin: center; animation: me 2s ease-out infinite; }
   @keyframes me { from { transform: scale(1); opacity: 1; } to { transform: scale(3); opacity: 0; } }

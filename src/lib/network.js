@@ -59,3 +59,11 @@ export const DISTRICTS = [
   ['Jakarta Selatan', -6.275, 106.8], ['Jakarta Timur', -6.24, 106.92], ['Tangerang', -6.18, 106.62],
   ['Tangerang Selatan', -6.3, 106.7], ['Depok', -6.4, 106.82], ['Bogor', -6.6, 106.8], ['Bekasi', -6.24, 107.0],
 ]
+
+// "You are here" figure (own drawing, not Street View's Pegman). Feet at (0,0), ~25 units tall.
+export const PERSON = {
+  head: { cy: -20.5, r: 4.3 },
+  body: 'M-5.5-15h11a2 2 0 0 1 2 2v7a1.5 1.5 0 0 1-3 0v-5h-.5v11a1.6 1.6 0 0 1-3.2 0v-6h-1.6v6a1.6 1.6 0 0 1-3.2 0v-11h-.5v5a1.5 1.5 0 0 1-3 0v-7a2 2 0 0 1 2-2z',
+}
+export const personSvg = (fill = '#2563eb') =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="120" viewBox="-10 -27 20 30"><ellipse cy="0.5" rx="6" ry="2" fill="rgba(11,31,58,.3)"/><g fill="${fill}" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" paint-order="stroke"><path d="${PERSON.body}"/><circle cy="${PERSON.head.cy}" r="${PERSON.head.r}"/></g></svg>`

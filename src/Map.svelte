@@ -1,5 +1,6 @@
 <script>
   import { untrack } from 'svelte'
+  import { personSvg } from './lib/network.js'
   import * as maplibregl from 'maplibre-gl'
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
   import { sel, select, openStop, openLine, net, netReady } from './lib/state.svelte.js'
@@ -75,8 +76,11 @@
       })
       // GPS dot (shared with the schematic via sel.me)
       m.addSource('me', { type: 'geojson', data: fc([]) })
-      m.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 18, 'circle-color': '#2563eb', 'circle-opacity': 0.18 } })
-      m.addLayer({ id: 'me-dot', type: 'circle', source: 'me', paint: { 'circle-radius': 7, 'circle-color': '#2563eb', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } })
+      m.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 18, 'circle-color': '#2563eb', 'circle-opacity': 0.18, 'circle-pitch-alignment': 'map' } })
+      const img = new Image(80, 120)
+      img.onload = () => m.addImage('me', img, { pixelRatio: 2 })
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(personSvg())
+      m.addLayer({ id: 'me-dot', type: 'symbol', source: 'me', layout: { 'icon-image': 'me', 'icon-size': 0.75, 'icon-anchor': 'bottom', 'icon-offset': [0, 3], 'icon-allow-overlap': true, 'icon-ignore-placement': true } })
       m.addSource('focus', { type: 'geojson', data: fc([]) })
       m.addLayer({ id: 'focus-ring', type: 'circle', source: 'focus', paint: { 'circle-radius': 14, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#0b1f3a', 'circle-stroke-width': 3 } })
       map = m
