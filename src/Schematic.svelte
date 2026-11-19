@@ -34,13 +34,24 @@
   const lineColor = Object.fromEntries(sch.lines.map((l) => [l.id, l.color]))
   const hub = (n) => n.lines.length > 1
   // Line badges just past both ends of each line's main pattern.
-  const badges = OTHER.flatMap((l) => {
+  // A pattern that ends where it starts (TJ out-and-back, KRL loop) gets one badge, not two stacked.
+  // ponytail: no badge at a round trip's far terminal; place it by matching the line name's "A – B" if wanted.
+  // Badges of different lines sharing a terminus are laid side by side across the line.
+  const badges = []
+  for (const l of OTHER) {
     const q = l.stops[0]
-    return [[q[0], q[1]], [q.at(-1), q.at(-2)]].map(([a, b]) => {
+    const ends = q[0] === q.at(-1) ? [[q[0], q[1]]] : [[q[0], q[1]], [q.at(-1), q.at(-2)]]
+    for (const [a, b] of ends) {
       const p = byId.get(a), o = byId.get(b), d = Math.hypot(p.x - o.x, p.y - o.y) || 1
-      return { l, x: p.x + ((p.x - o.x) / d) * 22, y: p.y + ((p.y - o.y) / d) * 22 }
-    })
-  })
+      const ux = (p.x - o.x) / d, uy = (p.y - o.y) / d
+      let x = p.x + ux * 22, y = p.y + uy * 22
+      for (let n = 1; badges.some((c) => Math.hypot(c.x - x, c.y - y) < 24) && n < 6; n++) {
+        const side = n % 2 ? 1 : -1, step = Math.ceil(n / 2) * 26 * side
+        x = p.x + ux * 22 - uy * step; y = p.y + uy * 22 + ux * step
+      }
+      badges.push({ l, x, y })
+    }
+  }
   const landmarks = LANDMARKS.map((l) => ({ ...l, ...project(l) }))
   const districts = DISTRICTS.map(([name, lat, lon]) => ({ name, ...project({ lat, lon }) }))
 
