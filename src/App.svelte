@@ -166,6 +166,12 @@
   .modes { display: flex; gap: 4px; padding: 3px; background: #fff; border-radius: 999px; box-shadow: 0 2px 10px rgb(11 31 58 / 0.18); overflow-x: auto; scrollbar-width: none; }
   .modes button, .loc { min-height: 32px; padding: 0 11px; gap: 6px; border: 0; border-radius: 999px; box-shadow: none; background: none; font-size: 13px; font-weight: 600; flex: none; }
   .modes button[aria-pressed='true'] { background: var(--navy); color: #fff; }
+  /* phones: the five chips + locate button must fit beside the zoom controls (≥ 320 px wide) */
+  @media (max-width: 767px) {
+    .modes { min-width: 0; gap: 0; }
+    .modes button { padding: 0 7px; gap: 4px; font-size: 12px; min-height: 30px; }
+    .sw { width: 7px; height: 7px; }
+  }
   .sw { width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .loc { width: 38px; height: 38px; padding: 0; justify-content: center; background: #fff; box-shadow: 0 2px 10px rgb(11 31 58 / 0.18); }
   .loc svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }

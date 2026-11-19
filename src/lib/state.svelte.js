@@ -1,3 +1,4 @@
+import { jakartaNow } from './time.js'
 // Single source of truth for selection; map, panel and SVG all read/write this.
 // mode: null = all, or 'mrt' | 'krl' | 'lrt' | 'tj' to focus one mode (others dimmed). me = user GPS fix.
 // focus = a non-MRT stop picked from search: {name, mode, lat, lon, sub, k}.
@@ -33,6 +34,42 @@ fetch(`${import.meta.env.BASE_URL}data/schematic.json`)
   .then((d) => (sch = d))
   .catch(() => {})
 export const schematic = () => sch
+// Line panel (sel.line) for schematic line ids; shared by Skema and Peta.
+// fleet(id) → vehicles running now (only the schematic animates them; 0 hides it).
+const MODE_NAME = { mrt: 'MRT Jakarta', krl: 'Kereta (KAI Commuter)', lrt: 'LRT', tj: 'Bus Transjakarta' }
+export function tjHead(id) {
+  const now = jakartaNow(new Date())
+  return net.tjHeadway?.[id]?.[now.weekend ? 'we' : 'wd']?.[Math.floor(now.minutes / 60) % 24]
+}
+export const lineTitle = (ln) => (ln.mode === 'tj' ? `Koridor ${ln.id} · ${ln.name}` : ln.name)
+export function lineData(ids, fleet = () => 0) {
+  const node = new Map(sch?.nodes.map((n) => [n.id, n]))
+  const here = ids.map((id) => sch?.lines.find((l) => l.id === id)).filter(Boolean)
+  if (!here.length) return null
+  const sub = (ln) => {
+    const main = ln.stops[0] ?? [], n = new Set(ln.stops.flat()).size, tj = ln.mode === 'tj'
+    const [a, z] = [node.get(main[0])?.name, node.get(main.at(-1))?.name]
+    const ends = main.length && !tj ? (a === z ? ` · lingkar dari ${a}` : ` · ${a} – ${z}`) : ''
+    const head = tj && tjHead(ln.id) ? ` · tiap ±${Math.round(tjHead(ln.id))} mnt` : ''
+    const f = fleet(ln.id)
+    return `${ln.id === 'A' ? 'KAI Bandara' : MODE_NAME[ln.mode]} · ${n} ${tj ? 'halte' : 'stasiun'}${ends}${head}${f ? ` · ${f} ${tj ? 'bus' : 'kereta'} jalan` : ''}`
+  }
+  return {
+    title: here.length > 1 ? `${here.length} layanan lewat jalur ini` : lineTitle(here[0]),
+    rows: here.map((l) => ({
+      color: l.color, id: l.id, tj: l.mode === 'tj', mode: l.mode, title: lineTitle(l), sub: sub(l),
+      stops: [...new Set(l.stops[0] ?? [])].map((id) => node.get(id)).map((n) => ({ name: n.name, mode: n.mode, code: n.code })), // round-trip patterns → each stop once
+    })),
+  }
+}
+export function openLine(ids, fleet) {
+  const d = lineData(ids, fleet)
+  if (!d) return
+  select(null)
+  sel.stop = null
+  sel.line = d
+}
+
 // A real stop ({name, mode}) → its node on the schematic, or undefined.
 export const drawnStop = ({ name, mode }) => sch?.nodes.find((n) => n.mode === mode && n.name === name)
 

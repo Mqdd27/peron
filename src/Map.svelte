@@ -1,7 +1,8 @@
 <script>
+  import { untrack } from 'svelte'
   import * as maplibregl from 'maplibre-gl'
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-  import { sel, select, openStop, net, netReady } from './lib/state.svelte.js'
+  import { sel, select, openStop, openLine, net, netReady } from './lib/state.svelte.js'
 
   maplibregl.setWorkerUrl(workerUrl)
 
@@ -89,13 +90,16 @@
           m.addSource('net-stops', { type: 'geojson', data: net.stops })
           m.addLayer({ id: 'net-line', type: 'line', source: 'net-lines', layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 11, byMode(1.2, 2), 16, byMode(3, 5)] } }, 'track-casing')
-          m.addLayer({ id: 'net-stop', type: 'circle', source: 'net-stops', minzoom: 12.5,
-            paint: { 'circle-radius': byMode(3, 4), 'circle-color': '#fff', 'circle-stroke-width': 2,
+          m.addLayer({ id: 'net-stop', type: 'circle', source: 'net-stops', minzoom: 10,
+            paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, byMode(1.6, 2.6), 13, byMode(3, 4.5), 16, byMode(5, 7)], 'circle-color': '#fff', 'circle-stroke-width': 2,
               'circle-stroke-color': ['match', ['get', 'mode'], 'tj', '#1f5fbf', 'lrt', '#f26522', '#3fb6dc'] } }, 'track-casing')
-          m.addLayer({ id: 'net-stop-label', type: 'symbol', source: 'net-stops', minzoom: 14.5,
+          m.addLayer({ id: 'net-stop-label-rail', type: 'symbol', source: 'net-stops', minzoom: 11.5, filter: ['!=', ['get', 'mode'], 'tj'],
+            layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11.5, 'text-offset': [0, 1], 'text-anchor': 'top', 'text-optional': true },
+            paint: { 'text-color': '#24324a', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } }, 'station-dot')
+          m.addLayer({ id: 'net-stop-label', type: 'symbol', source: 'net-stops', minzoom: 14, filter: ['==', ['get', 'mode'], 'tj'],
             layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-optional': true },
             paint: { 'text-color': '#3b4352', 'text-halo-color': '#fff', 'text-halo-width': 1.4 } }, 'station-dot')
-          applyMode(m, sel.mode)
+          applyMode(m, sel.mode, sel.line)
         })
     })
 
@@ -104,22 +108,36 @@
       const f = m.queryRenderedFeatures(box, { layers: ['exit-dot', 'station-dot', 'net-stop'].filter((l) => m.getLayer(l)) })
       return f.find((x) => x.layer.id === 'exit-dot') ?? f.find((x) => x.layer.id === 'station-dot') ?? f[0]
     }
+    // Lines under the finger → schematic line ids ('track' = MRT). Shared corridors give several.
+    const linesAt = (p) => {
+      const box = [[p.x - 6, p.y - 6], [p.x + 6, p.y + 6]]
+      const f = m.queryRenderedFeatures(box, { layers: ['track', 'net-line'].filter((l) => m.getLayer(l)) })
+      return [...new Set(f.map((x) => (x.layer.id === 'track' ? 'M' : x.properties.ref)))]
+    }
     m.on('click', (e) => {
       const f = hit(e.point)
-      if (!f) return
+      if (!f) {
+        const ids = linesAt(e.point)
+        if (ids.length) openLine(ids)
+        else sel.line = null
+        return
+      }
       if (f.layer.id === 'exit-dot') select(f.properties.station, f.properties.id)
       else if (f.layer.id === 'net-stop') openStop(net.stops.find((s) => s.mode === f.properties.mode && s.name === f.properties.name))
       else select(f.properties.code)
     })
-    m.on('mousemove', (e) => (m.getCanvas().style.cursor = hit(e.point) ? 'pointer' : ''))
+    m.on('mousemove', (e) => (m.getCanvas().style.cursor = hit(e.point) || linesAt(e.point).length ? 'pointer' : ''))
 
     return () => m.remove()
   })
 
-  // Mode focus: dim every layer that isn't the chosen mode.
-  function applyMode(m, mode) {
-    const o = (mine) => (mode === null || mode === mine ? 1 : 0.12)
-    const net = mode === null ? 1 : ['case', ['==', ['get', 'mode'], mode], 1, 0.12]
+  // Focus: dim everything outside the chosen mode, or outside the lines of the open line panel.
+  function applyMode(m, mode, line) {
+    const ids = line?.rows.map((r) => r.id)
+    const o = (mine) => (ids ? (ids.includes('M') ? 1 : 0.12) : mode === null || mode === mine ? 1 : 0.12)
+    const onStop = ids && ['any', ...ids.map((id) => ['in', `,${id},`, ['concat', ',', ['coalesce', ['get', 'lines'], ''], ',', ['coalesce', ['get', 'routes'], ''], ',']])]
+    const net = ids ? ['case', ['has', 'ref'], ['case', ['in', ['get', 'ref'], ['literal', ids]], 1, 0.08], ['case', onStop, 1, 0.12]]
+      : mode === null ? 1 : ['case', ['==', ['get', 'mode'], mode], 1, 0.12]
     const set = (layer, props, v) => m.getLayer(layer) && props.forEach((p) => m.setPaintProperty(layer, p, v))
     set('track', ['line-opacity'], o('mrt'))
     set('track-casing', ['line-opacity'], o('mrt'))
@@ -128,10 +146,11 @@
     set('net-line', ['line-opacity'], net)
     set('net-stop', ['circle-opacity', 'circle-stroke-opacity'], net)
     set('net-stop-label', ['text-opacity'], net)
+    set('net-stop-label-rail', ['text-opacity'], net)
   }
   $effect(() => {
-    const mode = sel.mode
-    if (map) applyMode(map, mode)
+    const mode = sel.mode, line = sel.line
+    if (map) applyMode(map, mode, line)
   })
 
   // GPS dot; fly to it on the first fix after turning location on.
@@ -150,6 +169,23 @@
     if (!map || !f || hidden || Date.now() - f.k > 3000) return
     map.getSource('focus').setData(fc([pt(f, {})]))
     map.flyTo({ center: [f.lon, f.lat], zoom: Math.max(map.getZoom(), 15.5), duration: 900 })
+  })
+
+  // Switching Skema → Peta: centre on whatever station/halte panel is open.
+  let wasHidden = hidden
+  $effect(() => {
+    const shown = wasHidden && !hidden
+    wasHidden = hidden
+    if (!map || !shown) return
+    const s = untrack(() => data.stations.find((x) => x.code === sel.station)), stop = untrack(() => sel.stop)
+    requestAnimationFrame(() => {
+      map.resize()
+      if (s) map.fitBounds(bbox([s, ...s.exits]), { padding: padding(), maxZoom: 17.5, duration: 700 })
+      else if (stop) {
+        map.getSource('focus').setData(fc([pt(stop, {})]))
+        map.flyTo({ center: [stop.lon, stop.lat], zoom: Math.max(map.getZoom(), 16), padding: padding(), duration: 800 })
+      }
+    })
   })
 
   // Highlight + camera follow selection.
