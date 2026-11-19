@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte'
   import { personSvg } from './lib/network.js'
+  import { followLine } from './lib/route.js'
   import * as maplibregl from 'maplibre-gl'
   import 'maplibre-gl/dist/maplibre-gl.css'
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
@@ -12,6 +13,8 @@
   let { data, hidden = false } = $props()
   let el
   let map = $state(null)
+  let netLines = $state.raw(null) // network-lines.json, for snapping routes onto the real lines
+  let tjShapes = $state.raw({}) // tj-shapes.json: GTFS road shape of every TJ trip pattern
 
   const NAVY = '#0b1f3a'
   const YELLOW = '#ffcc00'
@@ -84,9 +87,11 @@
       m.addLayer({ id: 'me-dot', type: 'symbol', source: 'me', layout: { 'icon-image': 'me', 'icon-size': 0.75, 'icon-anchor': 'bottom', 'icon-offset': [0, 3], 'icon-allow-overlap': true, 'icon-ignore-placement': true } })
       // Found route: only the ridden stretches, straight between stops (ponytail: not snapped to track geometry).
       m.addSource('route', { type: 'geojson', data: fc([]) })
-      m.addLayer({ id: 'route-casing', type: 'line', source: 'route', filter: ['!', ['get', 'walk']], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 7, 16, 14] } })
-      m.addLayer({ id: 'route-line', type: 'line', source: 'route', filter: ['!', ['get', 'walk']], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 16, 8] } })
-      m.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['get', 'walk'], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#55627a', 'line-width': 3, 'line-dasharray': [0.1, 2] } })
+      m.addLayer({ id: 'route-casing', type: 'line', source: 'route', filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!', ['get', 'walk']]], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 7, 16, 14] } })
+      m.addLayer({ id: 'route-line', type: 'line', source: 'route', filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!', ['get', 'walk']]], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 16, 8] } })
+      m.addLayer({ id: 'route-stripe', type: 'line', source: 'route', filter: ['==', ['get', 'stripe'], true], paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 1.2, 16, 2.5], 'line-dasharray': [2, 1.6] } })
+      m.addLayer({ id: 'route-xfer', type: 'circle', source: 'route', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 6, 'circle-color': '#fff', 'circle-stroke-color': '#0b1f3a', 'circle-stroke-width': 3 } })
+      m.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['all', ['==', ['geometry-type'], 'LineString'], ['get', 'walk']], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#55627a', 'line-width': 3, 'line-dasharray': [0.1, 2] } })
       m.addSource('focus', { type: 'geojson', data: fc([]) })
       m.addLayer({ id: 'focus-ring', type: 'circle', source: 'focus', paint: { 'circle-radius': 14, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#0b1f3a', 'circle-stroke-width': 3 } })
       map = m
@@ -95,6 +100,8 @@
       Promise.all([netReady, fetch(`${import.meta.env.BASE_URL}data/network-lines.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
         .then(([net, lines]) => {
           if (!net || !lines) return
+          netLines = lines
+          fetch(`${import.meta.env.BASE_URL}data/tj-shapes.json`).then((r) => r.json()).then((s) => (tjShapes = s)).catch(() => {})
           const byMode = (tj, rail) => ['match', ['get', 'mode'], 'tj', tj, rail]
           m.addSource('net-lines', { type: 'geojson', data: lines })
           m.addSource('net-stops', { type: 'geojson', data: net.stops })
@@ -165,7 +172,13 @@
   $effect(() => {
     const geo = sel.line ? null : sel.route?.result?.geo
     if (!map || hidden) return // drawn when Peta opens; no GPU work while Skema is showing
-    map.getSource('route').setData(fc((geo ?? []).filter((l) => l.coords.length > 1).map((l) => ({ type: 'Feature', properties: { walk: l.walk, color: l.color }, geometry: { type: 'LineString', coordinates: l.coords } }))))
+    const ways = (id) => tjShapes[id] ?? (id === 'M' ? data.geometry.features.map((f) => f.geometry.coordinates) : (netLines?.features ?? []).filter((f) => f.properties.ref === id).map((f) => f.geometry.coordinates))
+    const mode = (id) => netLines?.features.find((f) => f.properties.ref === id)?.properties.mode
+    const spare = (id) => (netLines?.features ?? []).filter((f) => f.properties.mode === mode(id) && f.properties.ref !== id).map((f) => f.geometry.coordinates)
+    const shape = (l) => (l.walk || !l.line ? l.coords : followLine(ways(l.line), l.coords, l.line === 'M' ? [] : spare(l.line)))
+    map.getSource('route').setData(fc((geo ?? []).filter((l) => l.coords.length > 1).map((l) => ({ type: 'Feature', properties: { walk: l.walk, color: l.color, stripe: l.stripe }, geometry: { type: 'LineString', coordinates: shape(l) } })).concat(
+      // a dot where each ride after the first starts: the transfer points
+      (geo ?? []).filter((l, i) => i && !l.walk && l.coords.length).map((l) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: l.coords[0] } })))))
     const all = (geo ?? []).flatMap((l) => l.coords)
     if (all.length > 1) {
       const lon = all.map((c) => c[0]), lat = all.map((c) => c[1])

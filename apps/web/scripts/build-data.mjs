@@ -272,7 +272,24 @@ const tj = await cached('tj-gtfs', async () => {
   const names = Object.fromEntries(rows('routes.txt').filter((c) => /^\d+$/.test(c[0]) && +c[0] <= 14).map((c) => [c[0], c[3].replace(/ - /g, ' – ')]))
   const colCol = execFileSync('unzip', ['-p', zip, 'routes.txt'], { maxBuffer: 1e8 }).toString().split(/\r?\n/, 1)[0].split(',').indexOf('route_color')
   const colors = Object.fromEntries(rows('routes.txt').filter((c) => /^\d+$/.test(c[0]) && +c[0] <= 14 && /^[0-9a-f]{6}$/i.test(c[colCol] ?? '')).map((c) => [c[0], `#${c[colCol]}`]))
-  return { headway, stops, names, seqs, colors }
+  // Road shape of every trip pattern per corridor (shapes.txt), for drawing found routes on Peta.
+  // Thinned to points ≥15 m apart; ~5-decimal coordinates are ~1 m.
+  const head = (name) => execFileSync('unzip', ['-p', zip, name], { maxBuffer: 1e8 }).toString().split(/\r?\n/, 1)[0].split(',')
+  const shapeCol = head('trips.txt').indexOf('shape_id'), [sId, sSeq, sLat, sLon] = ['shape_id', 'shape_pt_sequence', 'shape_pt_lat', 'shape_pt_lon'].map((c) => head('shapes.txt').indexOf(c))
+  const shapeRoute = {}
+  for (const t of rows('trips.txt')) if (/^\d+$/.test(t[1]) && +t[1] <= 14 && t[shapeCol]) shapeRoute[t[shapeCol]] = t[1]
+  const pts = {}
+  for (const c of rows('shapes.txt')) if (shapeRoute[c[sId]]) (pts[c[sId]] ??= []).push([+c[sSeq], +(+c[sLon]).toFixed(5), +(+c[sLat]).toFixed(5)])
+  const shapes = {}
+  for (const [id, p] of Object.entries(pts)) {
+    const line = []
+    for (const [, lon, lat] of p.sort((a, b) => a[0] - b[0])) {
+      const l = line.at(-1)
+      if (!l || Math.hypot((lon - l[0]) * 110000, (lat - l[1]) * 110000) >= 15) line.push([lon, lat])
+    }
+    ;(shapes[shapeRoute[id]] ??= []).push(line)
+  }
+  return { headway, stops, names, seqs, colors, shapes }
 })
 const tjHeadway = tj.headway
 
@@ -328,6 +345,8 @@ const network = {
   stops: { type: 'FeatureCollection', features: stopFeatures },
 }
 await writeFile(here('../public/data/network.json'), JSON.stringify(network))
+// GTFS road shapes per TJ corridor, only for snapping found routes on Peta (fetched lazily with the map)
+await writeFile(here('../public/data/tj-shapes.json'), JSON.stringify(tj.shapes ?? {}))
 // line shapes are only drawn on Peta, so they live in their own file the map fetches lazily (~1 MB)
 await writeFile(here('../public/data/network-lines.json'), JSON.stringify({ type: 'FeatureCollection', features: routeFeatures }))
 

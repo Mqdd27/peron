@@ -2,9 +2,10 @@
   // "Dari → Ke" route planner. Search runs locally (lib/route.js), so it works offline and needs no key.
   import { fly } from 'svelte/transition'
   import { sel, select, openStop, net, schematic, lineTitle, tjHead } from './lib/state.svelte.js'
-  import { buildGraph, findRoute, placeNodes } from './lib/route.js'
+  import { buildGraph, findRoute, placeNodes, legStripes } from './lib/route.js'
   import { LANDMARKS } from './lib/network.js'
   import { nextDepartures } from './lib/time.js'
+  import { haversine } from './lib/geo.js'
 
   /** @type {{ data: any }} */
   let { data } = $props()
@@ -26,7 +27,7 @@
     for (const l of result.legs) {
       if (l.type === 'walk') { walk = walk ? { ...walk, to: l.to, m: walk.m + l.m } : { from: l.from, to: l.to, m: l.m }; continue }
       const prev = out.findLast((x) => x.type === 'ride')
-      if (prev) out.push({ type: 'xfer', at: prev.leg.to, to: walk?.to ?? l.from, m: walk?.m ?? 0, line: g.line.get(l.line) })
+      if (prev) out.push({ type: 'xfer', at: prev.leg.to, to: walk?.to ?? l.from, m: walk?.m ?? 0, line: g.line.get(l.line), color: l.color })
       else if (walk) out.push({ type: 'walk', ...walk })
       out.push({ type: 'ride', leg: l })
       walk = null
@@ -35,6 +36,19 @@
     return out
   })
   const xfers = $derived(steps.filter((x) => x.type === 'xfer'))
+  const rides = $derived(steps.filter((x) => x.type === 'ride').map((x) => x.leg))
+  // Feeder services (angkot, Metromini, non-BRT Transjakarta…) at an MRT station, from mrt.json.
+  function feeders(id) {
+    const st = id.startsWith('mrt:') && data.stations.find((x) => `mrt:${x.code}` === id)
+    return st ? Object.entries(st.integration ?? {}).map(([op, r]) => `${op} ${r.join(', ')}`).join(' · ') : ''
+  }
+  // Ride-hailing estimate, like Google Maps' "ojek online" option: road ≈ 1.35× straight line at ~20 km/h
+  // plus ~5 min pickup. ponytail: no traffic or price data; only shown when it clearly beats transit.
+  function ojolMinutes(f, t) {
+    const a = ll(f[0]), b = ll(t[0])
+    return a && b ? Math.round(5 + ((haversine({ lon: a[0], lat: a[1] }, { lon: b[0], lat: b[1] }) / 1000) * 1.35 * 60) / 20) : null
+  }
+  const ojol = $derived(sel.route?.ojol)
 
   function go(e) {
     e?.preventDefault()
@@ -43,7 +57,12 @@
     const r = error ? null : findRoute(g, f, t)
     if (!error && !r) error = 'Rute tidak ditemukan di jaringan yang tersedia.'
     if (r && !r.legs.length) error = 'Asal dan tujuan ada di stasiun yang sama.'
-    sel.route = { from, to, result: r?.legs.length ? { ...r, lines: [...new Set(r.legs.filter((l) => l.type === 'ride').map((l) => l.line))], geo: geo(r.legs) } : null }
+    if (r) {
+      const rides = r.legs.filter((l) => l.type === 'ride'), st = legStripes(rides.map((l) => g.line.get(l.line).color))
+      rides.forEach((l, i) => ((l.color = g.line.get(l.line).color), (l.stripe = st[i]))) // stripe tells same-coloured legs apart on Skema and Peta
+    }
+    const oj = f.length && t.length && r?.legs.length !== 0 ? ojolMinutes(f, t) : null
+    sel.route = { from, to, ojol: oj && (!r || r.minutes - oj >= 15 || r.minutes >= 2 * oj) ? oj : null, result: r?.legs.length ? { ...r, lines: [...new Set(r.legs.filter((l) => l.type === 'ride').map((l) => l.line))], geo: geo(r.legs) } : null }
   }
   // Real-world coordinates for Peta: each leg as [lon, lat] through its stops.
   function ll(id) {
@@ -51,7 +70,7 @@
     const s = n.mode === 'mrt' ? data.stations.find((x) => `mrt:${x.code}` === id) : net.stops.find((x) => x.mode === n.mode && x.name === n.name)
     return s && [s.lon, s.lat]
   }
-  const geo = (legs) => legs.map((l) => ({ walk: l.type === 'walk', color: l.type === 'ride' ? g.line.get(l.line).color : '#55627a', coords: (l.type === 'ride' ? l.stops : [l.from, l.to]).map(ll).filter(Boolean) }))
+  const geo = (legs) => legs.map((l) => ({ walk: l.type === 'walk', color: l.type === 'ride' ? l.color : '#55627a', stripe: !!l.stripe, coords: (l.type === 'ride' ? l.stops : [l.from, l.to]).map(ll).filter(Boolean), line: l.line }))
   const swap = () => ([from, to] = [to, from])
 
   const name = (id) => g.node.get(id).name
@@ -88,6 +107,9 @@
 
   <div class="body">
     {#if error}<p class="err" role="status">{error}</p>{/if}
+    {#if ojol}
+      <p class="ojol"><b>{result ? `Ojek online bisa lebih cepat: ±${ojol} mnt` : `Coba ojek online: ±${ojol} mnt`}</b><br />Pesan lewat Gojek, Grab, atau Maxim. Perkiraan tanpa macet.</p>
+    {/if}
     {#if result}
       <p class="total"><b>±{result.minutes} menit</b> · {xfers.length ? `${xfers.length}× pindah` : 'tanpa pindah'}</p>
       {#if xfers.length}
@@ -100,16 +122,18 @@
               <p class="head"><span class="xi" aria-hidden="true">⇄</span> Pindah di <button class="stop" onclick={() => open(st.at)}>{name(st.at)}</button></p>
               <p class="sub">
                 {#if st.m >= 40}Jalan kaki ±{st.m} m (±{Math.max(1, Math.round(st.m / 75))} mnt) ke <button class="stop" onclick={() => open(st.to)}>{name(st.to)}</button>, lalu{/if}
-                ganti ke <span class="pill" class:round={st.line.mode !== 'tj'} style:background={st.line.color}>{st.line.id}</span> {KIND[st.line.mode]}
+                ganti ke <span class="pill" class:round={st.line.mode !== 'tj'} style:background={st.color}>{st.line.id}</span> {KIND[st.line.mode]}
               </p>
             </li>
           {:else if st.type === 'ride'}
             {@const leg = st.leg}
             {@const ln = g.line.get(leg.line)}
-            <li class="ride" style:--c={ln.color}>
-              <p class="head"><span class="pill" class:round={ln.mode !== 'tj'} style:background={ln.color}>{ln.id}</span> Naik {KIND[ln.mode]} arah <b>{leg.toward}</b></p>
+            <li class="ride" style:--c={leg.color}>
+              <p class="head"><span class="pill" class:round={ln.mode !== 'tj'} style:background={leg.color}>{ln.id}</span> Naik {KIND[ln.mode]} arah <b>{leg.toward}</b></p>
               <p class="sub">{lineTitle(ln)}</p>
               <p><button class="stop" onclick={() => open(leg.from)}>{name(leg.from)}</button> → <button class="stop" onclick={() => open(leg.to)}>{name(leg.to)}</button> · {leg.stops.length - 1} {ln.mode === 'tj' ? 'halte' : 'stasiun'}</p>
+              {#if leg === rides[0] && feeders(leg.from)}<p class="sub">Armada lain di {name(leg.from)}: {feeders(leg.from)}</p>{/if}
+              {#if leg === rides.at(-1) && feeders(leg.to)}<p class="sub">Armada lain di {name(leg.to)}: {feeders(leg.to)}</p>{/if}
               {#if ln.mode === 'mrt'}
                 {@const next = mrtNext(leg)}
                 <p class="sub">{next.length ? `Berikutnya: ${next.map((n) => n.time).join(', ')}` : 'Sudah tidak beroperasi hari ini'}</p>
@@ -162,6 +186,8 @@
   .body { overflow-y: auto; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); flex: 1; overscroll-behavior: contain; }
   .total { font-size: 15px; margin: 6px 0 10px; }
   .err { color: #b42318; font-size: 14px; }
+  .ojol { margin: 0 0 12px; padding: 8px 10px; border-radius: 10px; background: #e7f6ec; color: #1d4d2e; font-size: 13px; }
+  .ojol b { color: #0f5132; }
   .legs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
   .legs li { padding: 8px 0 8px 14px; border-left: 4px solid var(--c, transparent); }
   .legs li.walk { border-left: 4px dotted #9aa5b8; }

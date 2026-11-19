@@ -106,3 +106,18 @@ test('findRoute: cross-mode trips with direction and transfers', async () => {
   assert.ok(says(trip('Ragunan', 'Monas'))[0].endsWith(':Galunggung'))
   assert.equal(trip('Fatmawati', 'Tidak Ada'), null)
 })
+
+test('followLine: snaps a ride onto its ways, falls back to spare ways, then straight', async () => {
+  const { followLine } = await import('../src/lib/route.js')
+  const a = [106.8, -6.2], b = [106.81, -6.2]
+  const bend = [[106.8, -6.2], [106.805, -6.205], [106.81, -6.2]]
+  assert.deepEqual(followLine([bend], [a, b]), [a, ...bend, b])
+  assert.deepEqual(followLine([], [a, b], [bend]), [a, ...bend, b])
+  assert.deepEqual(followLine([], [a, b]), [a, b])
+})
+
+test('legStripes: a ride the same colour as an earlier one is striped, official colours kept', async () => {
+  const { legStripes } = await import('../src/lib/route.js')
+  assert.deepEqual(legStripes(['#e2231a', '#D62126', '#45A49E']), [false, true, false])
+  assert.deepEqual(legStripes(['#e2231a', '#D62126', '#9b1f21']), [false, true, true])
+})

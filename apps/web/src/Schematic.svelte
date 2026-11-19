@@ -180,7 +180,7 @@
       const a = byId.get(l.from), b = byId.get(l.to)
       if (l.type === 'walk') return { walk: true, d: `M${a.x},${a.y}L${b.x},${b.y}` }
       const i = sch.lines.findIndex((x) => x.id === l.line), pts = sampled(i)
-      return { d: l.stops.slice(1).map((id, k) => hop(pts, byId.get(l.stops[k]), byId.get(id))).join(''), color: sch.lines[i].color }
+      return { d: l.stops.slice(1).map((id, k) => hop(pts, byId.get(l.stops[k]), byId.get(id))).join(''), color: sch.lines[i].color, stripe: l.stripe }
     })
   })
   $effect(() => {
@@ -517,7 +517,7 @@
     {/each}
     {#each routeD as r, i (i)}
       {#if r.walk}<path d={r.d} class="rwalk" />
-      {:else}<path d={r.d} class="rcase" /><path d={r.d} class="rline" style:stroke={r.color} />{/if}
+      {:else}<path d={r.d} class="rcase" /><path d={r.d} class="rline" style:stroke={r.color} />{#if r.stripe}<path d={r.d} class="rstripe" />{/if}{/if}
     {/each}
 
     {#each badges as b}
@@ -752,9 +752,10 @@
   .tick { stroke-width: 4; }
   .casing.thin { stroke-width: 9; }
   .line { fill: none; stroke-width: 5; stroke-linejoin: round; stroke-linecap: round; }
-  .rcase, .rline, .rwalk { fill: none; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }
+  .rcase, .rline, .rwalk, .rstripe { fill: none; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }
   .rcase { stroke: #fff; stroke-width: 13; }
   .rline { stroke-width: 7; }
+  .rstripe { stroke: #fff; stroke-width: 2.2; stroke-dasharray: 6 5; } /* same-colour leg after another, e.g. Koridor 1 after MRT */
   .rwalk { stroke: #55627a; stroke-width: 3.5; stroke-dasharray: 0.1 7; }
   .brt-casing { fill: none; stroke: #fff; stroke-width: 6.5; stroke-linejoin: round; stroke-linecap: round; }
   .brt { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }

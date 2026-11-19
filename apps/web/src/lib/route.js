@@ -122,3 +122,67 @@ function toward(g, leg) {
       }
   return g.node.get(leg.to).name
 }
+
+// Real-world shape of a ride for the map: shortest path along the line's OSM ways between each pair of
+// consecutive stops ([lon, lat] each). Way ends within ~40 m of another way are joined (OSM gaps).
+// A hop the line's own ways can't connect (e.g. a GTFS detour variant) is retried on `spare` (the other
+// ways of the same mode), then falls back to a straight segment.
+const metres = (a, b) => Math.hypot((a[0] - b[0]) * 110540 * Math.cos((a[1] * Math.PI) / 180), (a[1] - b[1]) * 110540)
+function wayGraph(ways) {
+  const key = (c) => `${c[0].toFixed(6)},${c[1].toFixed(6)}`
+  const pt = new Map(), adj = new Map()
+  const link = (a, b) => { const d = metres(pt.get(a), pt.get(b)); for (const [p, q] of [[a, b], [b, a]]) (adj.get(p) ?? adj.set(p, []).get(p)).push([q, d]) }
+  for (const w of ways) w.forEach((c, i) => (pt.set(key(c), c), i && link(key(w[i - 1]), key(c))))
+  // ~330 m grid cells, so gap joining and stop snapping only look at nearby points
+  const cell = (c, dx = 0, dy = 0) => `${Math.floor(c[0] / 0.003) + dx},${Math.floor(c[1] / 0.003) + dy}`
+  const grid = new Map()
+  for (const [k, c] of pt) (grid.get(cell(c)) ?? grid.set(cell(c), []).get(cell(c))).push(k)
+  const around = (c) => [-1, 0, 1].flatMap((dx) => [-1, 0, 1].flatMap((dy) => grid.get(cell(c, dx, dy)) ?? []))
+  for (const e of ways.flatMap((w) => [key(w[0]), key(w.at(-1))])) for (const k of around(pt.get(e))) if (k !== e && metres(pt.get(e), pt.get(k)) < 40) link(e, k)
+  const nearest = (c) => { let best = null, bd = 300; for (const k of around(c)) { const d = metres(pt.get(k), c); if (d < bd) (bd = d), (best = k) } return best }
+  return (from, to) => {
+    const a = nearest(from), b = nearest(to)
+    if (!a || !b) return null
+    // ponytail: Dijkstra with a sorted-insert queue; fine for a few thousand vertices
+    const dist = new Map([[a, 0]]), prev = new Map(), q = [[0, a]], done = new Set()
+    while (q.length) {
+      const [d, k] = q.shift()
+      if (k === b) break
+      if (done.has(k)) continue
+      done.add(k)
+      for (const [n, w] of adj.get(k) ?? []) {
+        if (d + w >= (dist.get(n) ?? Infinity)) continue
+        dist.set(n, d + w), prev.set(n, k)
+        const i = q.findIndex((x) => x[0] > d + w)
+        q.splice(i < 0 ? q.length : i, 0, [d + w, n])
+      }
+    }
+    if (a !== b && !prev.has(b)) return null
+    const out = [b]
+    while (out[0] !== a) out.unshift(prev.get(out[0]))
+    return out.map((k) => pt.get(k))
+  }
+}
+export function followLine(ways, stops, spare = []) {
+  const own = wayGraph(ways)
+  let other = null
+  // a path far longer than the hop itself is a wrong turn through unrelated ways, not the bus's road
+  const sane = (run, a, b) => run && run.reduce((s, c, i) => s + (i ? metres(run[i - 1], c) : 0), 0) < 2.5 * metres(a, b) + 300 ? run : null
+  const out = [stops[0]]
+  for (let i = 1; i < stops.length; i++) {
+    const [a, b] = [stops[i - 1], stops[i]]
+    const run = sane(own(a, b), a, b) ?? sane((other ??= wayGraph(spare))(a, b), a, b)
+    out.push(...(run ?? []), b)
+  }
+  return out
+}
+
+// Which rides of one trip need a white centre stripe: a line whose official colour is close to an earlier
+// leg's (MRT red vs Koridor 1 red) keeps that colour, so it still matches the legend, but gets striped.
+export function legStripes(colors) {
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+  const near = (a, b) => { const x = rgb(a), y = rgb(b); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) < 100 }
+  const out = []
+  colors.forEach((c, i) => out.push(colors.slice(0, i).some((u, j) => !out[j] && near(u, c))))
+  return out
+}
