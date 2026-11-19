@@ -73,6 +73,7 @@
     if (view === 'skema' && !drawnStop(s)) view = 'peta' // not drawn on the schematic → show it on the map
     openStop(net.stops.find((x) => x.mode === s.mode && x.name === s.name) ?? s)
   }
+  const side = $derived(!!(station || sel.stop || sel.line || sel.route)) // a 390px panel covers the left edge on desktop
   const dist = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`)
 </script>
 
@@ -85,11 +86,11 @@
     {#await import('./Map.svelte') then { default: MapView }}<MapView {data} hidden={view === 'skema'} />{/await}
   {/if}
   {#if view === 'skema' && schematic()}<Schematic {data} sch={schematic()} />{/if}
-  <div class="seg" role="group" aria-label="Tampilan">
+  <div class="seg" class:side role="group" aria-label="Tampilan">
     <button aria-pressed={view === 'skema'} onclick={() => (view = 'skema')}>Skema</button>
     <button aria-pressed={view === 'peta'} onclick={() => (view = 'peta')}>Peta</button>
   </div>
-  <div class="bar">
+  <div class="bar" class:side>
     <div class="modes" role="group" aria-label="Fokus moda">
       {#each MODES as m}
         <button aria-pressed={sel.mode === m.id} onclick={() => (sel.mode = m.id)}>
@@ -102,9 +103,9 @@
     </button>
   </div>
   {#if gps.error}
-    <p class="gps err" role="status">{gps.error}</p>
+    <p class="gps err" class:side role="status">{gps.error}</p>
   {:else if gps.on}
-    <p class="gps" role="status">
+    <p class="gps" class:side role="status">
       {#if !near}Mencari lokasi…
       {:else}
         Terdekat: <b>{near.name}</b> <span class="md">{MODE_NAME[near.mode]}</span> · {dist(near.dist)}
@@ -171,7 +172,8 @@
   }
   .seg button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; box-shadow: none; background: none; font-weight: 600; }
   .seg button[aria-pressed='true'] { background: var(--navy); color: #fff; }
-  @media (min-width: 768px) { .seg { left: calc(50% + 195px); } }
+  /* desktop: centre over the map, i.e. right of the 390px side panel when one is open */
+  @media (min-width: 768px) { .seg.side { left: calc(50% + 195px); } }
   .bar, .gps {
     position: fixed; z-index: 3; left: 12px; right: 64px; display: flex; gap: 6px; align-items: center;
   }
@@ -202,7 +204,8 @@
   .gps.err { color: #b42318; padding-right: 14px; }
   .gps button { min-height: 30px; padding: 0 12px; border: 0; box-shadow: none; background: var(--navy); color: #fff; font-size: 13px; font-weight: 600; }
   @media (min-width: 768px) {
-    .bar, .gps { left: calc(50% + 195px); right: auto; translate: -50% 0; max-width: none; }
+    .bar, .gps { left: 50%; right: auto; translate: -50% 0; max-width: none; }
+    .bar.side, .gps.side { left: calc(50% + 195px); }
   }
   .msg { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; color: var(--navy); }
   .dock { position: fixed; z-index: 2; left: 50%; translate: -50% 0; bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }

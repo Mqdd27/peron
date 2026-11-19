@@ -2,7 +2,7 @@
   // "Dari → Ke" route planner. Search runs locally (lib/route.js), so it works offline and needs no key.
   import { fly } from 'svelte/transition'
   import { sel, select, openStop, net, schematic, lineTitle, tjHead } from './lib/state.svelte.js'
-  import { buildGraph, findRoute, placeNodes, legStripes } from './lib/route.js'
+  import { buildGraph, findRoutes, placeNodes, legStripes } from './lib/route.js'
   import { LANDMARKS } from './lib/network.js'
   import { nextDepartures } from './lib/time.js'
   import { haversine } from './lib/geo.js'
@@ -54,15 +54,17 @@
     e?.preventDefault()
     const f = placeNodes(g, from, LANDMARKS), t = placeNodes(g, to, LANDMARKS)
     error = !f.length ? `"${from}" tidak ditemukan. Pilih dari daftar.` : !t.length ? `"${to}" tidak ditemukan. Pilih dari daftar.` : ''
-    const r = error ? null : findRoute(g, f, t)
+    const rs = error ? [] : findRoutes(g, f, t), r = rs[0]
     if (!error && !r) error = 'Rute tidak ditemukan di jaringan yang tersedia.'
     if (r && !r.legs.length) error = 'Asal dan tujuan ada di stasiun yang sama.'
-    if (r) {
-      const rides = r.legs.filter((l) => l.type === 'ride'), st = legStripes(rides.map((l) => g.line.get(l.line).color))
-      rides.forEach((l, i) => ((l.color = g.line.get(l.line).color), (l.stripe = st[i]))) // stripe tells same-coloured legs apart on Skema and Peta
-    }
+    const options = r?.legs.length ? rs.map(prep) : []
     const oj = f.length && t.length && r?.legs.length !== 0 ? ojolMinutes(f, t) : null
-    sel.route = { from, to, ojol: oj && (!r || r.minutes - oj >= 15 || r.minutes >= 2 * oj) ? oj : null, result: r?.legs.length ? { ...r, lines: [...new Set(r.legs.filter((l) => l.type === 'ride').map((l) => l.line))], geo: geo(r.legs) } : null }
+    sel.route = { from, to, ojol: oj && (!r || r.minutes - oj >= 15 || r.minutes >= 2 * oj) ? oj : null, options, result: options[0] ?? null }
+  }
+  function prep(r) {
+    const rides = r.legs.filter((l) => l.type === 'ride'), st = legStripes(rides.map((l) => g.line.get(l.line).color))
+    rides.forEach((l, i) => ((l.color = g.line.get(l.line).color), (l.stripe = st[i]))) // stripe tells same-coloured legs apart on Skema and Peta
+    return { ...r, lines: [...new Set(rides.map((l) => l.line))], geo: geo(r.legs) }
   }
   // Real-world coordinates for Peta: each leg as [lon, lat] through its stops.
   function ll(id) {
@@ -111,6 +113,16 @@
       <p class="ojol"><b>{result ? `Ojek online bisa lebih cepat: ±${ojol} mnt` : `Coba ojek online: ±${ojol} mnt`}</b><br />Pesan lewat Gojek, Grab, atau Maxim. Perkiraan tanpa macet.</p>
     {/if}
     {#if result}
+      {#if sel.route.options?.length > 1}
+        <div class="opts" role="tablist" aria-label="Pilihan rute">
+          {#each sel.route.options as o, i (i)}
+            <button role="tab" aria-selected={o === result} class:on={o === result} onclick={() => (sel.route = { ...sel.route, result: o })}>
+              <b>±{o.minutes} mnt</b>
+              <span>{#each o.lines as id}{@const ln = g.line.get(id)}<span class="pill" class:round={ln.mode !== 'tj'} style:background={ln.color}>{id}</span>{/each}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
       <p class="total"><b>±{result.minutes} menit</b> · {xfers.length ? `${xfers.length}× pindah` : 'tanpa pindah'}</p>
       {#if xfers.length}
         <p class="xsum">Pindah di {#each xfers as x, i}{i ? ', ' : ''}<b>{name(x.at)}{x.to !== x.at && name(x.to) !== name(x.at) ? ` → ${name(x.to)}` : ''}</b>{/each}</p>
@@ -185,6 +197,11 @@
   .primary { border: 0; background: var(--navy); color: #fff; }
   .body { overflow-y: auto; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); flex: 1; overscroll-behavior: contain; }
   .total { font-size: 15px; margin: 6px 0 10px; }
+  .opts { display: flex; gap: 6px; margin: 4px 0 8px; overflow-x: auto; }
+  .opts button { display: grid; gap: 4px; justify-items: start; min-height: 44px; padding: 6px 10px; border: 1px solid #d5dae3; border-radius: 10px; background: #fff; color: var(--navy); font: inherit; font-size: 13px; cursor: pointer; flex: none; }
+  .opts button.on { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); background: #f3f5f9; }
+  .opts button > span { display: flex; gap: 3px; }
+  .opts button:focus-visible { outline: 2px solid var(--navy); outline-offset: 1px; }
   .err { color: #b42318; font-size: 14px; }
   .ojol { margin: 0 0 12px; padding: 8px 10px; border-radius: 10px; background: #e7f6ec; color: #1d4d2e; font-size: 13px; }
   .ojol b { color: #0f5132; }

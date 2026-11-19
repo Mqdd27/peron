@@ -174,8 +174,8 @@
     if (!map || hidden) return // drawn when Peta opens; no GPU work while Skema is showing
     const ways = (id) => tjShapes[id] ?? (id === 'M' ? data.geometry.features.map((f) => f.geometry.coordinates) : (netLines?.features ?? []).filter((f) => f.properties.ref === id).map((f) => f.geometry.coordinates))
     const mode = (id) => netLines?.features.find((f) => f.properties.ref === id)?.properties.mode
-    const spare = (id) => (netLines?.features ?? []).filter((f) => f.properties.mode === mode(id) && f.properties.ref !== id).map((f) => f.geometry.coordinates)
-    const shape = (l) => (l.walk || !l.line ? l.coords : followLine(ways(l.line), l.coords, l.line === 'M' ? [] : spare(l.line)))
+    const spare = (id) => (netLines?.features ?? []).filter((f) => f.properties.mode === mode(id) && (f.properties.ref !== id || tjShapes[id])).map((f) => f.geometry.coordinates)
+    const shape = (l) => (l.walk || !l.line ? l.coords : followLine(ways(l.line), l.coords, l.line === 'M' ? [] : spare(l.line), !!tjShapes[l.line]))
     map.getSource('route').setData(fc((geo ?? []).filter((l) => l.coords.length > 1).map((l) => ({ type: 'Feature', properties: { walk: l.walk, color: l.color, stripe: l.stripe }, geometry: { type: 'LineString', coordinates: shape(l) } })).concat(
       // a dot where each ride after the first starts: the transfer points
       (geo ?? []).filter((l, i) => i && !l.walk && l.coords.length).map((l) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: l.coords[0] } })))))
