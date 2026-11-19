@@ -1,0 +1,11 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": { "outputs": ["dist/**"] },
+    "test": {},
+    "dev": { "cache": false, "persistent": true },
+    "preview": { "cache": false, "persistent": true, "dependsOn": ["build"] },
+    "data": { "cache": false, "outputs": ["public/data/**", "scripts/.cache-*.json"] },
+    "data:offline": { "cache": false }
+  }
+}

@@ -31,9 +31,11 @@ Bisa dipasang di layar utama HP. Setelah dibuka sekali saat online, Skema, jadwa
 
 Butuh Node.js 20+ dan CLI `unzip` (untuk membaca GTFS Transjakarta).
 
+Repo ini monorepo [Turborepo](https://turbo.build) dengan npm workspaces. Semua perintah dijalankan dari root.
+
 ```sh
 npm install
-npm run data:offline   # bangun public/data/* dari cache di scripts/
+npm run data:offline   # bangun apps/web/public/data/* dari cache
 npm run dev            # http://localhost:5173
 ```
 
@@ -45,44 +47,48 @@ npm run build
 npm run preview
 ```
 
-Hasil build ada di `dist/` dan bisa di-host di layanan statis mana pun (misalnya Vercel atau Netlify).
+Hasil build ada di `apps/web/dist/` dan bisa di-host di layanan statis mana pun. Untuk Vercel, `vercel.json` di root sudah mengatur perintah build dan folder output.
 
 ## Data
 
-Semua data dibangun saat build oleh `scripts/build-data.mjs` dan disajikan sebagai JSON statis. Aplikasi tidak memanggil API apa pun saat berjalan, selain tile peta.
+Semua data dibangun saat build oleh `apps/web/scripts/build-data.mjs` dan disajikan sebagai JSON statis. Aplikasi tidak memanggil API apa pun saat berjalan, selain tile peta.
 
 ```sh
 npm run data                             # ambil ulang semua sumber, fallback ke cache bila gagal
 npm run data:offline                     # pakai cache saja
-npm run data -- --only=osm-network       # ambil ulang satu cache saja
+npm run data -- -- --only=osm-network    # ambil ulang satu cache saja
 ```
 
 | File | Isi |
 | --- | --- |
-| `public/data/mrt.json` | Stasiun MRT, jadwal, pintu keluar, geometri jalur |
-| `public/data/network.json` | Stasiun dan halte moda lain, jalur, interval Transjakarta |
-| `public/data/schematic.json` | Tata letak peta skema hasil `scripts/schematic.mjs` |
+| `apps/web/public/data/mrt.json` | Stasiun MRT, jadwal, pintu keluar, geometri jalur |
+| `apps/web/public/data/network.json` | Stasiun dan halte moda lain, jalur, interval Transjakarta |
+| `apps/web/public/data/schematic.json` | Tata letak peta skema hasil `scripts/schematic.mjs` |
 
-Data lapangan yang tidak ada di sumber terbuka (tujuan pintu keluar, lift, catatan) diisi manual di `scripts/manual.json`, lalu jalankan `npm run data:offline`.
+Data lapangan yang tidak ada di sumber terbuka (tujuan pintu keluar, lift, catatan) diisi manual di `apps/web/scripts/manual.json`, lalu jalankan `npm run data:offline`.
 
-Cache sumber ada di `scripts/.cache-*.json` dan ikut di-commit supaya build tetap bisa jalan tanpa jaringan. Respons Overpass yang datanya lebih tua dari 30 hari ditolak.
+Cache sumber ada di `apps/web/scripts/.cache-*.json` dan ikut di-commit supaya build tetap bisa jalan tanpa jaringan. Respons Overpass yang datanya lebih tua dari 30 hari ditolak.
 
 ## Struktur
 
 ```
-scripts/
-  build-data.mjs      ambil OSM, jadwal MRT, GTFS Transjakarta → public/data
-  schematic.mjs       generator tata letak peta skema
-  manual.json         data lapangan yang diisi manual
-src/
-  App.svelte          shell, pencarian, filter moda, GPS
-  Schematic.svelte    peta skema (SVG) dan animasi kendaraan
-  Map.svelte          peta jalan (MapLibre)
-  StationPanel.svelte panel stasiun MRT
-  StopPanel.svelte    panel stasiun KRL/LRT dan halte Transjakarta
-  LinePanel.svelte    panel jalur
-  lib/                state, waktu, geometri, metadata jalur, model landmark
-test/                 unit test (node --test)
+turbo.json              pipeline task (build, test, dev, data)
+vercel.json             konfigurasi deploy Vercel
+apps/
+  web/                  PWA Peron (Svelte + Vite)
+    scripts/
+      build-data.mjs      ambil OSM, jadwal MRT, GTFS Transjakarta → public/data
+      schematic.mjs       generator tata letak peta skema
+      manual.json         data lapangan yang diisi manual
+    src/
+      App.svelte          shell, pencarian, filter moda, GPS
+      Schematic.svelte    peta skema (SVG) dan animasi kendaraan
+      Map.svelte          peta jalan (MapLibre)
+      StationPanel.svelte panel stasiun MRT
+      StopPanel.svelte    panel stasiun KRL/LRT dan halte Transjakarta
+      LinePanel.svelte    panel jalur
+      lib/                state, waktu, geometri, metadata jalur, model landmark
+    test/                 unit test (node --test)
 ```
 
 ## Batasan
