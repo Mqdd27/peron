@@ -5,7 +5,7 @@
   import LinePanel from './LinePanel.svelte'
   import RoutePanel from './RoutePanel.svelte'
   import Schematic from './Schematic.svelte'
-  import { sel, select, openStop, gps, toggleGps, net, drawnStop, schematic } from './lib/state.svelte.js'
+  import { sel, select, openStop, gps, toggleGps, net, drawnStop, schematic, openLine, lineData } from './lib/state.svelte.js'
   import { nearestStop } from './lib/geo.js'
 
   let data = $state(null)
@@ -49,6 +49,14 @@
   let near = $derived(sel.me && data ? nearestStop(data.stations, net.stops, sel.me) : null)
   // Station search across every mode; follows the mode chips.
   let finding = $state(false)
+  // Schedule list: every line by mode; a tap opens its LinePanel (MRT timetable / TJ interval per hour).
+  let jadwal = $state(false)
+  // stays true while a line from the list is open, so closing that panel lands back on the list;
+  // any other panel (station, stop, route) ends the schedule browse
+  $effect(() => { if (station || sel.stop || sel.route) jadwal = false })
+  const lineGroups = $derived(
+    jadwal ? MODES.filter((m) => m.id).map((m) => ({ ...m, rows: (schematic()?.lines ?? []).filter((l) => l.mode === m.id).map((l) => lineData([l.id]).rows[0]) })).filter((g) => g.rows.length) : []
+  )
   let q = $state('')
   let groups = $derived.by(() => {
     if (!data) return []
@@ -77,7 +85,7 @@
   const dist = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`)
 </script>
 
-<svelte:window onhashchange={readHash} onkeydown={(e) => e.key === 'Escape' && (finding = false)} />
+<svelte:window onhashchange={readHash} onkeydown={(e) => e.key === 'Escape' && (finding = jadwal = false)} />
 
 {#if error}
   <p class="msg">Gagal memuat data ({error}). Coba muat ulang.</p>
@@ -123,15 +131,44 @@
     <RoutePanel {data} />
   {:else}
     <div class="dock">
-      <button class="find" aria-expanded={finding} onclick={() => (finding = !finding)}>
+      <button class="find" aria-expanded={finding} onclick={() => ((jadwal = false), (finding = !finding))}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.6 12.6 17 17" /></svg>
         Cari stasiun
       </button>
-      <button class="find" onclick={() => ((finding = false), (sel.route = { from: near?.name ?? '', to: '', result: null }))}>
+      <button class="find" aria-expanded={jadwal} onclick={() => ((finding = false), (jadwal = !jadwal))}>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" /><path d="M10 5.5V10l3 2" /></svg>
+        Jadwal
+      </button>
+      <button class="find" onclick={() => ((finding = jadwal = false), (sel.route = { from: near?.name ?? '', to: '', result: null }))}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="15" r="2.2" /><circle cx="15" cy="5" r="2.2" /><path d="M7 15h5.5a3 3 0 0 0 0-6h-5a3 3 0 0 1 0-6H13" /></svg>
         Rute
       </button>
     </div>
+    {#if jadwal}
+      <nav class="list" aria-label="Jadwal semua jalur" in:fly={{ y: 24, duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220 }}>
+        <div class="head">
+          <p class="ttl">Jadwal</p>
+          <button class="x" aria-label="Tutup" onclick={() => (jadwal = false)}>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15" /></svg>
+          </button>
+        </div>
+        <div class="groups">
+          {#each lineGroups as g (g.id)}
+            <h2><span class="sw" style:background={g.color}></span>{g.label}<span class="n">{g.rows.length}</span></h2>
+            <ul>
+              {#each g.rows as l (l.id)}
+                <li>
+                  <button onclick={() => openLine([l.id])}>
+                    <span class="pill" class:round={!l.tj} style:background={l.color}>{l.id}</span>
+                    <span class="name">{l.title}<small>{l.sub}</small></span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/each}
+        </div>
+      </nav>
+    {/if}
     {#if finding}
       <nav class="list" aria-label="Cari stasiun dan halte" in:fly={{ y: 24, duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220 }}>
         <div class="head">
@@ -210,6 +247,9 @@
   .msg { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; color: var(--navy); }
   .dock { position: fixed; z-index: 2; left: 50%; translate: -50% 0; bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }
   .find { min-height: 44px; padding: 0 18px; gap: 8px; border: 0; font-weight: 600; box-shadow: 0 4px 16px rgb(11 31 58 / 0.22); white-space: nowrap; }
+  /* three bubbles must fit a 320 px phone: tighter padding, then drop the icons */
+  @media (max-width: 400px) { .dock { gap: 6px; } .find { padding: 0 12px; gap: 6px; } }
+  @media (max-width: 350px) { .find svg { display: none; } }
   .find[aria-expanded='true'] { background: var(--navy); color: #fff; }
   .find svg, .x svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
   .list {
@@ -236,6 +276,10 @@
     border: 0; border-radius: 10px; background: none; box-shadow: none; text-align: left;
   }
   .list li button:hover, .list li button:focus-visible { background: #f1f4f8; }
+  .ttl { flex: 1; margin: 0; align-self: center; padding-left: 6px; font-size: 18px; font-weight: 700; color: var(--navy); }
+  .pill { display: inline-grid; place-items: center; min-width: 28px; height: 22px; padding: 0 5px; border-radius: 5px; color: #fff; font-size: 12px; font-weight: 800; flex: none; }
+  .pill.round { border-radius: 11px; }
+  .name small { display: block; font-size: 12px; color: #55627a; }
   .empty { margin: 16px 8px; color: #55627a; font-size: 14px; }
   button {
     display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 14px;
