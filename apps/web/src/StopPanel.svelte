@@ -35,6 +35,8 @@
     const all = nextByDirection(krl.stops[stop.name], krl.keys, now), soon = all.filter((d) => d.next[0].inMin <= 120)
     return soon.length ? soon : all.slice(0, 1)
   })
+  // intercity KAI trains stopping here (OSM, no times): [name, from, to]
+  let ka = $derived((stop.ka ?? '').split(',').filter(Boolean).map((i) => net.intercity[i]).filter(Boolean))
   const inText = (m) => (!m ? 'sekarang' : m < 60 ? `${m} mnt` : `${Math.floor(m / 60)} j ${m % 60} mnt`)
   let nearby = $derived(
     [...data.stations.map((s) => ({ mode: 'mrt', name: s.name, code: s.code, lat: s.lat, lon: s.lon })), ...net.stops]
@@ -82,7 +84,7 @@
       </div>
       <p class="muted">Interval resmi jam ini dari GTFS Transjakarta. Jam kedatangan per bus tidak dipublikasikan.</p>
     {:else}
-      <h2>Kereta berikutnya</h2>
+      {#if trains || !ka.length}<h2>Kereta berikutnya</h2>{/if}
       {#if trains}
         {#if trains.length}
           <div class="deps">
@@ -95,7 +97,7 @@
           </div>
         {:else}<p><b>Sudah tidak ada kereta hari ini</b></p>{/if}
         <p class="muted">Jadwal hari kerja dari GTFS Open-KRL (data KAI Commuter, tidak resmi){jakartaNow(now).weekend ? '; akhir pekan bisa berbeda' : ''}.</p>
-      {:else}
+      {:else if !ka.length}
         <p class="muted">Jadwal belum tersedia: operator belum membuka data jadwalnya.</p>
       {/if}
       {#if lines.length}
@@ -103,6 +105,13 @@
         <ul class="lines">
           {#each lines as l}<li><span class="sw" style:background={l.color}></span>{l.name}</li>{/each}
         </ul>
+      {/if}
+      {#if ka.length}
+        <h2>KA antar kota</h2>
+        <ul class="ka">
+          {#each ka as [name, from, to] (name)}<li><b>{name}</b>{#if from && to}<span>{from === stop.name ? `→ ${to}` : to === stop.name ? `→ ${from}` : `${from} – ${to}`}</span>{/if}</li>{/each}
+        </ul>
+        <p class="muted">Dari OpenStreetMap, mungkin belum lengkap. Jadwal dan tiket: <a href="https://booking.kai.id/" target="_blank" rel="noopener">Access by KAI ↗</a></p>
       {/if}
     {/if}
 
@@ -222,6 +231,10 @@
   .next li { display: flex; justify-content: space-between; font-size: 14px; padding: 2px 0; }
   .next span { color: #55627a; font-size: 12px; }
   .lines, .exits, .near { list-style: none; margin: 0; padding: 0; }
+  .ka { list-style: none; margin: 0; padding: 0; }
+  .ka li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 14px; border-bottom: 1px solid #eef1f5; }
+  .ka span { color: #55627a; font-size: 12px; text-align: right; }
+  .muted a { color: var(--navy); font-weight: 600; }
   .lines li { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; }
   .sw { width: 22px; height: 6px; border-radius: 3px; flex: none; }
   .exits li { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 14px; }

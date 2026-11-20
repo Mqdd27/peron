@@ -95,6 +95,7 @@ apps/
 ## Batasan
 
 - Jadwal KRL diambil dari GTFS [Open-KRL](https://github.com/open-krl/pipeline), yang disusun dari papan jadwal KAI Commuter. Data ini tidak resmi, hanya untuk hari kerja (akhir pekan bisa berbeda), dan berlaku sampai tanggal `validUntil` di `krl.json`. Ganti tag rilis di `KRL_GTFS` bila Open-KRL menerbitkan versi baru. `kci.id` sendiri memblokir akses dari script.
+- KA antar kota hanya berupa daftar KA dan relasinya di panel stasiun (Gambir, Pasar Senen, Jatinegara, Bekasi, dll.), diambil dari relasi `route=train` OpenStreetMap. Daftarnya bisa belum lengkap. Jam keberangkatan tidak ditampilkan karena KAI tidak membuka data jadwal; panel menautkan ke Access by KAI.
 - Posisi KRL dan LRT di peta skema masih simulasi. Untuk KRL, simulasinya memakai interval per jam dari jadwal di atas. LRT belum membuka data jadwal.
 - Transjakarta hanya mempublikasikan interval per jam, bukan jam kedatangan per bus.
 - Jadwal MRT diambil dari situs MRT Jakarta, tidak resmi dan bisa berubah.

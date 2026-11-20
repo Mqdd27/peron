@@ -27,8 +27,8 @@ export function openStop(s) {
 export const netReady = fetch(`${import.meta.env.BASE_URL}data/network.json`)
   .then((r) => (r.ok ? r.json() : null))
   .catch(() => null)
-export const net = $state({ stops: [], tjHeadway: null, krlHeadway: null, tjNames: {}, routes: [] })
-netReady.then((d) => d && (net.tjHeadway = d.tjHeadway ?? null, net.krlHeadway = d.krlHeadway ?? null, net.tjNames = d.tjNames ?? {}, net.routes = d.routes ?? [], net.stops = d.stops.features.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] }))))
+export const net = $state({ stops: [], tjHeadway: null, krlHeadway: null, tjNames: {}, routes: [], intercity: [] })
+netReady.then((d) => d && (net.intercity = d.intercity ?? [], net.tjHeadway = d.tjHeadway ?? null, net.krlHeadway = d.krlHeadway ?? null, net.tjNames = d.tjNames ?? {}, net.routes = d.routes ?? [], net.stops = d.stops.features.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] }))))
 
 // Generated whole-network schematic (scripts/schematic.mjs). Raw: it is read-only and large.
 let sch = $state.raw(null)

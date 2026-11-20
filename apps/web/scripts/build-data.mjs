@@ -393,8 +393,34 @@ for (const s of krlFeed.stops) {
 await writeFile(here('../public/data/krl.json'), JSON.stringify({ validUntil: krlFeed.validUntil, keys: krlFeed.keys, stops: krlStops }))
 console.log(`krl.json: ${Object.keys(krlStops).length}/${krlFeed.stops.length} GTFS stops matched, valid until ${krlFeed.validUntil}; ${(JSON.stringify(krlStops).length / 1e3).toFixed(0)} kB`)
 
+// Intercity KAI trains (OSM route relations) stopping at a station in the network area. No times: KAI
+// publishes no open timetable, so the panel links to Access by KAI. OSM misses some trains (e.g. Argo Bromo Anggrek).
+const ka = await cached('osm-intercity', async () => {
+  const d = await overpass(`relation["route"="train"]["network"="KAI"](${NET_BBOX})->.r;.r out body;node(r.r)(${NET_BBOX});out skel;`, 120)
+  const pos = Object.fromEntries(d.elements.filter((e) => e.type === 'node').map((e) => [e.id, { lat: e.lat, lon: e.lon }]))
+  const trains = {} // "Serayu: Pasar Senen → Purwokerto" and its reverse fold into one train
+  for (const r of d.elements.filter((e) => e.type === 'relation')) {
+    const t = r.tags
+    if (/railway|jalur|lokal|commuter|feeder/i.test(`${t.name} ${t.service}`)) continue // track relations, local trains
+    const name = (t.name ?? '').split(':')[0].trim()
+    if (!name) continue
+    const tr = (trains[name] ??= { name, from: t.from ?? '', to: t.to ?? '', stops: [] })
+    for (const m of r.members) if (m.type === 'node' && /^stop/.test(m.role) && pos[m.ref]) tr.stops.push(pos[m.ref])
+  }
+  return Object.values(trains).filter((t) => t.stops.length).sort((a, b) => a.name.localeCompare(b.name))
+})
+const kaPts = ka.map((t) => t.stops)
+for (const f of stopFeatures) {
+  if (f.properties.mode !== 'krl') continue
+  const p = { lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }
+  const idx = kaPts.flatMap((stops, i) => (stops.some((s) => haversine(p, s) < 300) ? [i] : []))
+  if (idx.length) f.properties.ka = idx.join(',')
+}
+console.log(`intercity: ${ka.length} trains, stopping at ${stopFeatures.filter((f) => f.properties.ka).map((f) => f.properties.name).join(', ')}`)
+
 const network = {
   generatedAt: new Date().toISOString(),
+  intercity: ka.map(({ name, from, to }) => [name, from, to]),
   attribution: '© OpenStreetMap contributors (ODbL); jadwal TJ: GTFS Transjakarta; jadwal KRL: GTFS Open-KRL (data KAI Commuter)',
   tjHeadway,
   krlHeadway: krlFeed.headway,
