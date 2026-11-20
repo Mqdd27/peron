@@ -1,6 +1,6 @@
 <script>
   // Side panel for a tapped line (or every line sharing the tapped stretch), next to StopPanel.
-  // Schedules shown only where published: MRT timetable, Transjakarta hourly intervals (GTFS).
+  // Schedules shown only where published: MRT timetable, Transjakarta and KRL hourly intervals (GTFS).
   import { fly } from 'svelte/transition'
   import { select, openStop, sel, net } from './lib/state.svelte.js'
   import { jakartaNow, nextDepartures } from './lib/time.js'
@@ -26,7 +26,8 @@
     return { ...d, first: list[0], last: list.at(-1), next: nextDepartures(d.table, now, 4) }
   }))
   // TJ: interval per hour today; hours without service are null.
-  const tjHours = (id) => net.tjHeadway?.[id]?.[t.weekend ? 'we' : 'wd'] ?? []
+  // KRL: weekday intervals only (Open-KRL GTFS), shown on weekends too.
+  const hoursOf = (r) => (r.tj ? net.tjHeadway?.[r.id]?.[t.weekend ? 'we' : 'wd'] : net.krlHeadway?.[r.id]?.wd) ?? []
   const span = (hs) => {
     const on = hs.map((h, i) => (h ? i : -1)).filter((i) => i >= 0)
     return on.length === 24 ? '24 jam' : on.length ? `${String(on[0]).padStart(2, '0')}:00–${String(on.at(-1) + 1).padStart(2, '0')}:00` : 'tidak ada data'
@@ -81,8 +82,8 @@
             {/each}
           </div>
           <p class="muted">Jadwal MRT Jakarta (tidak resmi, bisa berubah). Waktu dari stasiun awal.</p>
-        {:else if r.tj}
-          {@const hs = tjHours(r.id)}
+        {:else if r.tj || hoursOf(r).length}
+          {@const hs = hoursOf(r)}
           {#if hs.length}
             <p class="now">Sekarang: <b>{hs[hour] ? `tiap ±${Math.max(1, Math.round(hs[hour]))} mnt` : 'tidak beroperasi'}</b> · operasi {span(hs)}</p>
             <ol class="hours" aria-label="Interval per jam">
@@ -92,7 +93,7 @@
                 </li>
               {/each}
             </ol>
-            <p class="muted">Interval (menit) per jam dari GTFS Transjakarta. Jam kedatangan per bus tidak dipublikasikan.</p>
+            <p class="muted">{r.tj ? 'Interval (menit) per jam dari GTFS Transjakarta. Jam kedatangan per bus tidak dipublikasikan.' : `Interval (menit) per jam per arah, jadwal hari kerja dari GTFS Open-KRL (data KAI Commuter, tidak resmi)${t.weekend ? '; akhir pekan bisa berbeda' : ''}. Jam per kereta ada di panel stasiun.`}</p>
           {:else}<p class="muted">Interval belum tersedia untuk koridor ini.</p>{/if}
         {:else}
           <p class="muted">Jadwal belum tersedia: operator belum membuka data jadwalnya. Posisi kereta di peta adalah simulasi.</p>

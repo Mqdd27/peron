@@ -27,8 +27,8 @@ export function openStop(s) {
 export const netReady = fetch(`${import.meta.env.BASE_URL}data/network.json`)
   .then((r) => (r.ok ? r.json() : null))
   .catch(() => null)
-export const net = $state({ stops: [], tjHeadway: null, tjNames: {}, routes: [] })
-netReady.then((d) => d && (net.tjHeadway = d.tjHeadway ?? null, net.tjNames = d.tjNames ?? {}, net.routes = d.routes ?? [], net.stops = d.stops.features.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] }))))
+export const net = $state({ stops: [], tjHeadway: null, krlHeadway: null, tjNames: {}, routes: [] })
+netReady.then((d) => d && (net.tjHeadway = d.tjHeadway ?? null, net.krlHeadway = d.krlHeadway ?? null, net.tjNames = d.tjNames ?? {}, net.routes = d.routes ?? [], net.stops = d.stops.features.map((f) => ({ ...f.properties, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] }))))
 
 // Generated whole-network schematic (scripts/schematic.mjs). Raw: it is read-only and large.
 let sch = $state.raw(null)
@@ -44,6 +44,17 @@ export function tjHead(id) {
   const now = jakartaNow(new Date())
   return net.tjHeadway?.[id]?.[now.weekend ? 'we' : 'wd']?.[Math.floor(now.minutes / 60) % 24]
 }
+// KRL: weekday timetable only (Open-KRL GTFS), also used on weekends.
+export function krlHead(id) {
+  return net.krlHeadway?.[id]?.wd?.[Math.floor(jakartaNow(new Date()).minutes / 60) % 24]
+}
+
+// KRL departures per station (data/krl.json, ~115 kB), fetched the first time a panel asks for it.
+let krl = $state.raw(null), krlLoad
+export function krlData() {
+  krlLoad ??= fetch(`${import.meta.env.BASE_URL}data/krl.json`).then((r) => (r.ok ? r.json() : null)).then((d) => (krl = d)).catch(() => {})
+  return krl
+}
 export const lineTitle = (ln) => (ln.mode === 'tj' ? `Koridor ${ln.id} · ${ln.name}` : ln.name)
 export function lineData(ids, fleet = () => 0) {
   const node = new Map(sch?.nodes.map((n) => [n.id, n]))
@@ -53,7 +64,7 @@ export function lineData(ids, fleet = () => 0) {
     const main = ln.stops[0] ?? [], n = new Set(ln.stops.flat()).size, tj = ln.mode === 'tj'
     const [a, z] = [node.get(main[0])?.name, node.get(main.at(-1))?.name]
     const ends = main.length && !tj ? (a === z ? ` · lingkar dari ${a}` : ` · ${a} – ${z}`) : ''
-    const head = tj && tjHead(ln.id) ? ` · tiap ±${Math.round(tjHead(ln.id))} mnt` : ''
+    const h = tj ? tjHead(ln.id) : krlHead(ln.id), head = h ? ` · tiap ±${Math.round(h)} mnt` : ''
     const f = fleet(ln.id)
     return `${ln.id === 'A' ? 'KAI Bandara' : MODE_NAME[ln.mode]} · ${n} ${tj ? 'halte' : 'stasiun'}${ends}${head}${f ? ` · ${f} ${tj ? 'bus' : 'kereta'} jalan` : ''}`
   }

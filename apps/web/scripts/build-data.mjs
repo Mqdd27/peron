@@ -336,10 +336,68 @@ for (const e of ent.elements) {
   ;(best.properties.exits ??= []).push({ ref: e.tags?.ref ?? '', name: e.tags?.name ?? '', lat: +e.lat.toFixed(6), lon: +e.lon.toFixed(6), wheelchair: e.tags?.wheelchair })
 }
 
+// KRL weekday timetable from the Open-KRL GTFS (built from KCI's own station boards). kci.id blocks
+// scripts (Cloudflare 403), so we take their published feed instead of scraping.
+// ponytail: pinned release; bump the tag when open-krl publishes a newer feed (validUntil is printed below).
+const KRL_GTFS = 'https://github.com/open-krl/pipeline/releases/download/v0.1.0/krl_gtfs_v1.zip'
+const krlFeed = await cached('krl-gtfs', async () => {
+  const r = await fetch(KRL_GTFS, { headers: { 'user-agent': UA } })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const zip = `${tmpdir()}/peron-krl-gtfs.zip`
+  await writeFile(zip, Buffer.from(await r.arrayBuffer()))
+  // the feed has no quoted fields, so a plain comma split is safe
+  const table = (name) => {
+    const [head, ...lines] = execFileSync('unzip', ['-p', zip, name], { maxBuffer: 1e8 }).toString().trim().split(/\r?\n/)
+    const cols = head.split(',')
+    return lines.map((l) => Object.fromEntries(l.split(',').map((v, i) => [cols[i], v])))
+  }
+  const FIX = { JAKARTAKOTA: 'Jakarta Kota', KAMPUNGBANDAN: 'Kampung Bandan', TANAHABANG: 'Tanah Abang', PARUNGPANJANG: 'Parung Panjang', TANJUNGPRIUK: 'Tanjung Priok', MRI: 'Manggarai', PSE: 'Pasar Senen' }
+  const pretty = (s) => s.split(' ').map((w) => (w === 'VIA' ? 'via' : FIX[w] ?? w[0] + w.slice(1).toLowerCase())).join(' ')
+  const calendar = table('calendar.txt')
+  // FAK = KA fakultatif, runs only when announced
+  const svc = new Set(calendar.filter((c) => c.monday === '1' && !/FAK/.test(c.service_id)).map((c) => c.service_id))
+  const ref = Object.fromEntries(table('routes.txt').map((r) => [r.route_id, r.route_short_name]))
+  const trip = Object.fromEntries(table('trips.txt').filter((t) => svc.has(t.service_id)).map((t) => [t.trip_id, `${ref[t.route_id]}|${pretty(t.trip_headsign)}`]))
+  const keys = [...new Set(Object.values(trip))].sort()
+  const keyIdx = Object.fromEntries(keys.map((k, i) => [k, i]))
+  const min = (t) => { const m = +t.slice(0, -6) * 60 + +t.slice(-5, -3); return m < 240 ? m + 1440 : m } // same service day as jakartaNow
+  const deps = {} // GTFS stop → flat [minute, key, …]
+  const perHour = {} // line → [24] trips leaving their origin, both directions
+  for (const st of table('stop_times.txt')) {
+    const k = trip[st.trip_id]
+    if (k == null) continue
+    if (st.stop_sequence === '1') ((perHour[k.split('|')[0]] ??= Array(24).fill(0))[Math.floor(min(st.departure_time) / 60) % 24]++)
+    if (st.pickup_type !== '1') (deps[st.stop_id] ??= []).push([min(st.departure_time), keyIdx[k]])
+  }
+  for (const id in deps) deps[id] = deps[id].sort((a, b) => a[0] - b[0]).flat()
+  // per-direction headway like tjHeadway: minutes between trains per WIB hour, null = no service
+  const headway = Object.fromEntries(Object.entries(perHour).map(([l, b]) => [l, { wd: b.map((n) => (n ? +(120 / n).toFixed(1) : null)) }]))
+  const validUntil = calendar.map((c) => c.end_date).sort().at(-1)
+  const stops = table('stops.txt').map((s) => ({ id: s.stop_id, name: s.stop_name, lat: +s.stop_lat, lon: +s.stop_lon }))
+  return { validUntil, keys, deps, headway, stops }
+})
+// GTFS stops → the OSM KRL stop features the app already shows (names differ, positions don't).
+const krlStops = {}
+const ptOf = (f) => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })
+for (const s of krlFeed.stops) {
+  if (!krlFeed.deps[s.id]) continue
+  let best, bd = 500
+  for (const f of stopFeatures) if (f.properties.mode === 'krl' && haversine(s, ptOf(f)) < bd) (bd = haversine(s, ptOf(f))), (best = f)
+  if (!best) continue // outside the network bbox (Merak line) or not mapped in OSM
+  const name = best.properties.name, prev = krlStops[name]
+  if (!prev) { krlStops[name] = krlFeed.deps[s.id]; continue }
+  const pairs = []
+  for (const flat of [prev, krlFeed.deps[s.id]]) for (let i = 0; i < flat.length; i += 2) pairs.push([flat[i], flat[i + 1]])
+  krlStops[name] = pairs.sort((a, b) => a[0] - b[0]).flat()
+}
+await writeFile(here('../public/data/krl.json'), JSON.stringify({ validUntil: krlFeed.validUntil, keys: krlFeed.keys, stops: krlStops }))
+console.log(`krl.json: ${Object.keys(krlStops).length}/${krlFeed.stops.length} GTFS stops matched, valid until ${krlFeed.validUntil}; ${(JSON.stringify(krlStops).length / 1e3).toFixed(0)} kB`)
+
 const network = {
   generatedAt: new Date().toISOString(),
-  attribution: '© OpenStreetMap contributors (ODbL); jadwal TJ: GTFS Transjakarta',
+  attribution: '© OpenStreetMap contributors (ODbL); jadwal TJ: GTFS Transjakarta; jadwal KRL: GTFS Open-KRL (data KAI Commuter)',
   tjHeadway,
+  krlHeadway: krlFeed.headway,
   tjNames: tj.names,
   routes: Object.values(routeNames),
   stops: { type: 'FeatureCollection', features: stopFeatures },

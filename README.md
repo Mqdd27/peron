@@ -62,7 +62,8 @@ npm run data -- -- --only=osm-network    # ambil ulang satu cache saja
 | File | Isi |
 | --- | --- |
 | `apps/web/public/data/mrt.json` | Stasiun MRT, jadwal, pintu keluar, geometri jalur |
-| `apps/web/public/data/network.json` | Stasiun dan halte moda lain, jalur, interval Transjakarta |
+| `apps/web/public/data/network.json` | Stasiun dan halte moda lain, jalur, interval Transjakarta dan KRL |
+| `apps/web/public/data/krl.json` | Keberangkatan KRL per stasiun (hari kerja), dimuat saat panel stasiun KRL dibuka |
 | `apps/web/public/data/schematic.json` | Tata letak peta skema hasil `scripts/schematic.mjs` |
 
 Data lapangan yang tidak ada di sumber terbuka (tujuan pintu keluar, lift, catatan) diisi manual di `apps/web/scripts/manual.json`, lalu jalankan `npm run data:offline`.
@@ -93,7 +94,8 @@ apps/
 
 ## Batasan
 
-- Jadwal per kereta hanya tersedia untuk MRT. KRL dan LRT belum membuka data jadwal, jadi posisi keretanya simulasi berdasarkan jadwal yang di dapat.
+- Jadwal KRL diambil dari GTFS [Open-KRL](https://github.com/open-krl/pipeline), yang disusun dari papan jadwal KAI Commuter. Data ini tidak resmi, hanya untuk hari kerja (akhir pekan bisa berbeda), dan berlaku sampai tanggal `validUntil` di `krl.json`. Ganti tag rilis di `KRL_GTFS` bila Open-KRL menerbitkan versi baru. `kci.id` sendiri memblokir akses dari script.
+- Posisi KRL dan LRT di peta skema masih simulasi. Untuk KRL, simulasinya memakai interval per jam dari jadwal di atas. LRT belum membuka data jadwal.
 - Transjakarta hanya mempublikasikan interval per jam, bukan jam kedatangan per bus.
 - Jadwal MRT diambil dari situs MRT Jakarta, tidak resmi dan bisa berubah.
 - Peta skema dibuat otomatis, jadi tata letaknya belum serapi peta yang digambar tangan.
@@ -103,6 +105,7 @@ apps/
 - Data stasiun, jalur, dan pintu: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL)
 - Tile peta: [OpenFreeMap](https://openfreemap.org) © OpenMapTiles
 - Halte dan interval Transjakarta: GTFS Transjakarta
+- Jadwal KRL: GTFS Open-KRL (data KAI Commuter, tidak resmi)
 - Jadwal MRT: situs MRT Jakarta (tidak resmi)
 
 Peron bukan aplikasi resmi dan tidak berafiliasi dengan MRT Jakarta, KAI Commuter, LRT Jakarta, LRT Jabodebek, atau Transjakarta.

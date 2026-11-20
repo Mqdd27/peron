@@ -1,10 +1,10 @@
 <script>
   // Detail panel for a KRL / LRT station or Transjakarta halte, shaped like the MRT StationPanel.
-  // Only data that is actually published is shown: TJ intervals (GTFS), lines and entrances (OSM).
+  // Only data that is actually published is shown: TJ intervals (GTFS), KRL weekday timetable (Open-KRL GTFS), lines and entrances (OSM).
   import { fly } from 'svelte/transition'
-  import { select, openStop, sel, net, schematic } from './lib/state.svelte.js'
+  import { select, openStop, sel, net, schematic, krlData } from './lib/state.svelte.js'
   import { haversine } from './lib/geo.js'
-  import { jakartaNow } from './lib/time.js'
+  import { jakartaNow, nextByDirection } from './lib/time.js'
   import { LINES } from './lib/network.js'
 
   /** @type {{ data: any, stop: any }} */
@@ -28,6 +28,14 @@
       id, name: net.tjNames[id] ?? '', color: schematic()?.lines.find((l) => l.mode === 'tj' && l.id === id)?.color ?? COLOR.tj, head: net.tjHeadway?.[id]?.[day]?.[h],
     }))
   })
+  const krl = $derived(stop.mode === 'krl' ? krlData() : null)
+  // directions with a train in the next 2 h; otherwise just the soonest one (late evening, rare short-turns)
+  let trains = $derived.by(() => {
+    if (!krl?.stops[stop.name]) return null
+    const all = nextByDirection(krl.stops[stop.name], krl.keys, now), soon = all.filter((d) => d.next[0].inMin <= 120)
+    return soon.length ? soon : all.slice(0, 1)
+  })
+  const inText = (m) => (!m ? 'sekarang' : m < 60 ? `${m} mnt` : `${Math.floor(m / 60)} j ${m % 60} mnt`)
   let nearby = $derived(
     [...data.stations.map((s) => ({ mode: 'mrt', name: s.name, code: s.code, lat: s.lat, lon: s.lon })), ...net.stops]
       .filter((s) => !(s.mode === stop.mode && s.name === stop.name))
@@ -75,7 +83,21 @@
       <p class="muted">Interval resmi jam ini dari GTFS Transjakarta. Jam kedatangan per bus tidak dipublikasikan.</p>
     {:else}
       <h2>Kereta berikutnya</h2>
-      <p class="muted">Jadwal belum tersedia: operator belum membuka data jadwalnya.</p>
+      {#if trains}
+        {#if trains.length}
+          <div class="deps">
+            {#each trains as d (d.ref + d.to)}
+              <div class="dep">
+                <h3><span class="pill" style:background={lineOf(d.ref).color}>{d.ref}</span>{d.to}</h3>
+                <ul class="next">{#each d.next as n}<li><b>{n.time}</b> <span>{inText(n.inMin)}</span></li>{/each}</ul>
+              </div>
+            {/each}
+          </div>
+        {:else}<p><b>Sudah tidak ada kereta hari ini</b></p>{/if}
+        <p class="muted">Jadwal hari kerja dari GTFS Open-KRL (data KAI Commuter, tidak resmi){jakartaNow(now).weekend ? '; akhir pekan bisa berbeda' : ''}.</p>
+      {:else}
+        <p class="muted">Jadwal belum tersedia: operator belum membuka data jadwalnya.</p>
+      {/if}
       {#if lines.length}
         <h2>Jalur</h2>
         <ul class="lines">
@@ -116,7 +138,7 @@
     {/if}
 
     <footer>
-      Data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL){stop.mode === 'tj' ? '; halte dan interval dari GTFS Transjakarta' : ''}.
+      Data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL){stop.mode === 'tj' ? '; halte dan interval dari GTFS Transjakarta' : trains ? '; jadwal KRL dari GTFS Open-KRL' : ''}.
     </footer>
   </div>
 </section>
@@ -196,6 +218,9 @@
   .body > p { font-size: 14px; margin: 4px 0; }
   .cname { margin: 0 0 6px; font-size: 13px; color: #55627a; }
   .dep p { margin: 0; font-size: 14px; }
+  .next { list-style: none; margin: 0; padding: 0; }
+  .next li { display: flex; justify-content: space-between; font-size: 14px; padding: 2px 0; }
+  .next span { color: #55627a; font-size: 12px; }
   .lines, .exits, .near { list-style: none; margin: 0; padding: 0; }
   .lines li { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; }
   .sw { width: 22px; height: 6px; border-radius: 3px; flex: none; }

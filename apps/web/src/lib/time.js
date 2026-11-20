@@ -53,3 +53,23 @@ export function trainsNow(stations, date = new Date()) {
   }
   return out
 }
+
+export const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.floor(m % 60)).padStart(2, '0')}`
+
+/**
+ * Next `n` departures per direction from a station's flat [minute, key, …] list (sorted by minute),
+ * key = index into `keys` ("line|headsign"). Directions come out soonest first.
+ */
+export function nextByDirection(flat, keys, date = new Date(), n = 2) {
+  const now = jakartaNow(date).minutes, out = new Map()
+  for (let i = 0; i < flat.length; i += 2) {
+    const inMin = Math.ceil(flat[i] - now)
+    if (inMin < 0) continue
+    const list = out.get(flat[i + 1]) ?? out.set(flat[i + 1], []).get(flat[i + 1])
+    if (list.length < n) list.push({ time: hhmm(flat[i]), inMin })
+  }
+  return [...out].map(([k, next]) => {
+    const [ref, to] = keys[k].split('|')
+    return { ref, to, next }
+  })
+}

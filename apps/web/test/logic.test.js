@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { haversine, projectToAxis, parseTimes, locateOnLine, nearestStop } from '../src/lib/geo.js'
-import { jakartaNow, nextDepartures, trainsNow } from '../src/lib/time.js'
+import { jakartaNow, nextDepartures, trainsNow, nextByDirection } from '../src/lib/time.js'
 
 test('parseTimes trims seconds, dedupes, keeps after-midnight last', () => {
   assert.deepEqual(parseTimes('23:50:00; 05:06:30; 00:10:00; 05:06:30; '), ['05:06', '23:50', '00:10'])
@@ -120,4 +120,16 @@ test('legStripes: a ride the same colour as an earlier one is striped, official 
   const { legStripes } = await import('../src/lib/route.js')
   assert.deepEqual(legStripes(['#e2231a', '#D62126', '#45A49E']), [false, true, false])
   assert.deepEqual(legStripes(['#e2231a', '#D62126', '#9b1f21']), [false, true, true])
+})
+
+test('nextByDirection: next n per line+headsign, soonest direction first, after-midnight trains count', () => {
+  const keys = ['B|Bogor', 'B|Jakarta Kota']
+  // 05:30 WIB; 1450 = 00:10 next calendar day (same service day)
+  const flat = [320, 0, 335, 1, 340, 0, 345, 0, 350, 1, 1450, 1]
+  const out = nextByDirection(flat, keys, new Date('2026-11-18T22:30:00Z'))
+  assert.deepEqual(out, [
+    { ref: 'B', to: 'Jakarta Kota', next: [{ time: '05:35', inMin: 5 }, { time: '05:50', inMin: 20 }] },
+    { ref: 'B', to: 'Bogor', next: [{ time: '05:40', inMin: 10 }, { time: '05:45', inMin: 15 }] },
+  ])
+  assert.deepEqual(nextByDirection(flat, keys, new Date('2026-11-18T17:05:00Z'))[0].next, [{ time: '00:10', inMin: 5 }])
 })
