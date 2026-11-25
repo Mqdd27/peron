@@ -9,7 +9,7 @@
   import { nearestStop } from './lib/geo.js'
 
   let data = $state(null)
-  let view = $state('skema')
+  let view = $state('peta')
   // maplibre (~1 MB JS + tiles) loads only once Peta is first opened; Skema-only visits never pay for it
   let mapOn = $state(false)
   $effect(() => { if (view === 'peta') mapOn = true })
