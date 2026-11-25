@@ -2,6 +2,7 @@
   // Detail panel for a KRL / LRT station or Transjakarta halte, shaped like the MRT StationPanel.
   // Only data that is actually published is shown: TJ intervals (GTFS), KRL weekday timetable (Open-KRL GTFS), lines and entrances (OSM).
   import { fly } from 'svelte/transition'
+  import Weather from './Weather.svelte'
   import { select, openStop, sel, net, schematic, krlData } from './lib/state.svelte.js'
   import { haversine } from './lib/geo.js'
   import { jakartaNow, nextByDirection } from './lib/time.js'
@@ -71,6 +72,7 @@
   </header>
 
   <div class="body">
+    <Weather lat={stop.lat} lon={stop.lon} />
     {#if stop.mode === 'tj'}
       <h2>Bus</h2>
       <div class="deps">

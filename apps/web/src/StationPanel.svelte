@@ -1,6 +1,7 @@
 <script>
   import { fly } from 'svelte/transition'
   import ExitSchematic from './ExitSchematic.svelte'
+  import Weather from './Weather.svelte'
   import { sel, select } from './lib/state.svelte.js'
   import { nextDepartures } from './lib/time.js'
 
@@ -54,6 +55,7 @@
   </header>
 
   <div class="body">
+    <Weather lat={station.lat} lon={station.lon} />
     <h2>Kereta berikutnya</h2>
     <div class="deps">
       {#each directions as d}

@@ -2,6 +2,7 @@
   import { untrack } from 'svelte'
   import { personSvg } from './lib/network.js'
   import { followLine } from './lib/route.js'
+  import { getWeather } from './lib/weather.js'
   import * as maplibregl from 'maplibre-gl'
   import 'maplibre-gl/dist/maplibre-gl.css'
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
@@ -50,7 +51,31 @@
           + `<button type="button" title="Miringkan peta" aria-label="Miringkan peta" style="${css}">2D</button>`
           + `<button type="button" title="Putar ke kiri" aria-label="Putar peta ke kiri" style="font:16px/1 system-ui;color:#0b1f3a">↺</button>`
           + `<button type="button" title="Putar ke kanan" aria-label="Putar peta ke kanan" style="font:16px/1 system-ui;color:#0b1f3a">↻</button>`
-        const [b, t, rl, rr] = d.children
+          + `<button type="button" aria-pressed="false" title="Radar hujan" aria-label="Radar hujan" style="font:15px/1 system-ui">☔</button>`
+        const [b, t, rl, rr, rain] = d.children
+        // Rain radar (RainViewer, keyless). Latest frame fetched on each switch-on.
+        // ponytail: one still frame, no animation/auto-refresh; free tier stops at z7, so it's overzoomed (soft) near street level.
+        rain.onclick = async () => {
+          const on = rain.getAttribute('aria-pressed') !== 'true'
+          rain.setAttribute('aria-pressed', on)
+          rain.style.background = on ? '#0b1f3a' : ''
+          if (m.getLayer('rain')) m.removeLayer('rain')
+          if (m.getSource('rain')) m.removeSource('rain')
+          if (!on) return
+          try {
+            const j = await (await fetch('https://api.rainviewer.com/public/weather-maps.json')).json()
+            const f = j.radar.past.at(-1)
+            if (rain.getAttribute('aria-pressed') !== 'true' || m.getSource('rain')) return // toggled off meanwhile
+            const at = new Date(f.time * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
+            rain.title = `Radar hujan · ${at} WIB (kosong = tidak ada hujan terdeteksi)`
+            m.addSource('rain', { type: 'raster', tileSize: 256, maxzoom: 7, tiles: [`${j.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`], attribution: 'Radar © RainViewer' })
+            m.addLayer({ id: 'rain', type: 'raster', source: 'rain', paint: { 'raster-opacity': 0.7 } }, m.getLayer('net-line') ? 'net-line' : 'track-casing')
+          } catch {
+            rain.setAttribute('aria-pressed', false)
+            rain.style.background = ''
+            rain.title = 'Radar hujan gagal dimuat — coba lagi'
+          }
+        }
         // Rotate buttons for mouse/trackpad users (touch: two-finger twist; mouse: right-drag). Compass resets north.
         rl.onclick = () => m.easeTo({ bearing: m.getBearing() - 45, duration: 400 })
         rr.onclick = () => m.easeTo({ bearing: m.getBearing() + 45, duration: 400 })
@@ -284,6 +309,22 @@
     })
   })
 
+  // Weather chip (issue #7) above the open station/halte; same cached request as the panel.
+  $effect(() => {
+    const p = data.stations.find((x) => x.code === sel.station) ?? sel.stop
+    if (!map || !p) return
+    let live = true, marker
+    getWeather(p.lat, p.lon).then((w) => {
+      if (!live) return
+      const el = document.createElement('div')
+      el.className = 'wx-chip'
+      el.title = w.current.label
+      el.textContent = `${w.current.icon} ${Math.round(w.current.temp)}°`
+      marker = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -18] }).setLngLat([p.lon, p.lat]).addTo(map)
+    }).catch(() => {}) // the panel shows the error; the map just has no chip
+    return () => ((live = false), marker?.remove())
+  })
+
   // Highlight + camera follow selection.
   let prev = { station: null, exit: null }
   $effect(() => {
@@ -332,5 +373,9 @@
   .map {
     position: fixed;
     inset: 0;
+  }
+  .map :global(.wx-chip) {
+    pointer-events: none; padding: 3px 9px; border-radius: 999px; background: #fff; color: #0b1f3a;
+    font: 700 13px/1.3 system-ui, sans-serif; white-space: nowrap; box-shadow: 0 2px 8px rgb(11 31 58 / 0.25);
   }
 </style>
