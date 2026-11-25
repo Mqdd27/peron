@@ -32,15 +32,78 @@
       style: 'https://tiles.openfreemap.org/styles/positron',
       bounds: bbox(data.stations),
       fitBoundsOptions: { padding: 40 },
-      dragRotate: false,
-      pitchWithRotate: false,
+      pitch: 60, // issue #6: real 3D map — tilted camera, rotatable, extruded buildings
+      maxPitch: 85, // tilt down to near street level, with a sky at the horizon
+      // Jabodetabek only (Rangkasbitung–Cikarang, Bogor–Tanjung Priok, with margin): no zooming out to all of
+      // Indonesia, so only tiles for the area the network reaches are ever fetched.
+      maxBounds: [[106.0, -6.95], [107.45, -5.8]],
       attributionControl: { compact: true, customAttribution: 'Jadwal: MRT Jakarta (tidak resmi)' },
     })
-    m.touchZoomRotate.disableRotation()
-    m.keyboard.disableRotation()
-    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+    m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
+    // Satellite toggle: Google satellite tiles, keyless. ponytail: unofficial endpoint (personal use), may break; official path is the Map Tiles API with a key.
+    m.addControl({
+      onAdd() {
+        const d = document.createElement('div')
+        d.className = 'maplibregl-ctrl maplibregl-ctrl-group'
+        const css = 'font:700 10px/1 system-ui;color:#0b1f3a'
+        d.innerHTML = `<button type="button" aria-pressed="false" title="Citra satelit" aria-label="Citra satelit" style="${css}">SAT</button>`
+          + `<button type="button" title="Miringkan peta" aria-label="Miringkan peta" style="${css}">2D</button>`
+          + `<button type="button" title="Putar ke kiri" aria-label="Putar peta ke kiri" style="font:16px/1 system-ui;color:#0b1f3a">↺</button>`
+          + `<button type="button" title="Putar ke kanan" aria-label="Putar peta ke kanan" style="font:16px/1 system-ui;color:#0b1f3a">↻</button>`
+        const [b, t, rl, rr] = d.children
+        // Rotate buttons for mouse/trackpad users (touch: two-finger twist; mouse: right-drag). Compass resets north.
+        rl.onclick = () => m.easeTo({ bearing: m.getBearing() - 45, duration: 400 })
+        rr.onclick = () => m.easeTo({ bearing: m.getBearing() + 45, duration: 400 })
+        // Tilt button: flat → tilted → street level → flat. Label shows the view it switches to.
+        const STEPS = [0, 60, 80]
+        const next = () => STEPS.find((p) => p > m.getPitch() + 5) ?? 0
+        const label = () => (t.textContent = next() ? '3D' : '2D')
+        t.onclick = () => m.easeTo({ pitch: next(), duration: 600 })
+        m.on('pitchend', label)
+        label()
+        b.onclick = () => {
+          if (!m.getLayer('sat')) return
+          const on = b.getAttribute('aria-pressed') !== 'true'
+          b.setAttribute('aria-pressed', on)
+          b.style.background = on ? '#0b1f3a' : ''
+          b.style.color = on ? '#fff' : '#0b1f3a'
+          m.setLayoutProperty('sat', 'visibility', on ? 'visible' : 'none')
+          // keep the 3D buildings over the photo, see-through so its real roofs still show
+          for (const l of ['building-3d', 'building-roof']) m.setPaintProperty(l, 'fill-extrusion-opacity', ['interpolate', ['linear'], ['zoom'], 14, 0, 15, on ? 0.6 : 0.95])
+        }
+        return d
+      },
+      onRemove() {},
+    }, 'top-right')
 
     m.on('load', () => {
+      m.setSky({ 'sky-color': '#7fb4e6', 'horizon-color': '#dfe9f3', 'fog-color': '#eef2f6', 'sky-horizon-blend': 0.5, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.6, 'atmosphere-blend': 0 })
+      // 3D buildings from the basemap's own OpenMapTiles building layer, replacing the flat footprints.
+      if (m.getLayer('building')) m.setLayoutProperty('building', 'visibility', 'none')
+      // Window textures (drawn once on a canvas, no image files): low-rise = small punched windows,
+      // towers = glass bands. Patterns cover roofs too, so a thin plain slab caps each building.
+      const H = ['coalesce', ['get', 'render_height'], 6], B = ['coalesce', ['get', 'render_min_height'], 0]
+      m.addImage('win-low', facade('#efe9df', '#8fa3b8', 24, 24, 10, 12), { pixelRatio: 2 })
+      m.addImage('win-tall', facade('#cfd8e3', '#6f8fb0', 16, 20, 14, 13), { pixelRatio: 2 })
+      const symbol = m.getStyle().layers.find((l) => l.type === 'symbol')?.id
+      const fade = ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.95]
+      m.addLayer({
+        id: 'building-3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
+        paint: { 'fill-extrusion-pattern': ['step', H, 'win-low', 30, 'win-tall'], 'fill-extrusion-height': H, 'fill-extrusion-base': B, 'fill-extrusion-opacity': fade },
+      }, symbol)
+      m.addLayer({
+        id: 'building-roof', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
+        paint: {
+          'fill-extrusion-color': ['interpolate', ['linear'], H, 0, '#e4ded4', 40, '#d3d9e1', 150, '#b4c0cf'],
+          'fill-extrusion-height': ['+', H, 0.4], 'fill-extrusion-base': H, 'fill-extrusion-opacity': fade,
+        },
+      }, symbol)
+      m.addSource('sat', {
+        type: 'raster', tileSize: 256, maxzoom: 20,
+        tiles: [0, 1, 2, 3].map((i) => `https://mt${i}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}`),
+        attribution: 'Citra © Google',
+      })
+      m.addLayer({ id: 'sat', type: 'raster', source: 'sat', layout: { visibility: 'none' } }, 'building-3d')
       m.addSource('track', { type: 'geojson', data: data.geometry })
       m.addSource('stations', {
         type: 'geojson',
@@ -238,6 +301,18 @@
     prev = { station, exit }
   })
 
+  // One façade tile: wall colour with a single window in the middle; repeats across the building.
+  function facade(wall, glass, w, h, ww, wh) {
+    const c = document.createElement('canvas')
+    c.width = w * 2, c.height = h * 2
+    const x = c.getContext('2d')
+    x.scale(2, 2)
+    x.fillStyle = wall
+    x.fillRect(0, 0, w, h)
+    x.fillStyle = glass
+    x.fillRect((w - ww) / 2, (h - wh) / 2, ww, wh)
+    return x.getImageData(0, 0, c.width, c.height)
+  }
   function bbox(pts) {
     const lons = pts.map((p) => p.lon), lats = pts.map((p) => p.lat)
     return [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]]
