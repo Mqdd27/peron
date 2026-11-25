@@ -5,6 +5,7 @@
   import { sel, select, net, drawnStop, lineData, tjHead, krlHead, focusIds } from './lib/state.svelte.js'
   import { trainsNow, jakartaNow, hhmm } from './lib/time.js'
   import { locateOnLine, nearestStop, project } from './lib/geo.js'
+  import { getWeather } from './lib/weather.js'
   import { LANDMARKS, DISTRICTS, PERSON } from './lib/network.js'
 
   /** @type {{ data: any, sch: any }} */
@@ -423,6 +424,22 @@
     const p = meas.getPointAtLength(track.at[loc.from] + (track.at[loc.to] - track.at[loc.from]) * loc.t)
     return { x: p.x, y: p.y, far: loc.off > 1500 }
   })
+  // Weather chip (issue #7) next to the open station/halte; same cached request as the panel.
+  let wxAt = $derived.by(() => {
+    const st = stations.find((x) => x.s.code === sel.station)
+    if (st) return { x: st.x, y: st.y, lat: st.s.lat, lon: st.s.lon }
+    const n = sel.stop && drawnStop(sel.stop)
+    return n ? { x: n.x, y: n.y, lat: sel.stop.lat, lon: sel.stop.lon } : null
+  })
+  let wx = $state(null)
+  $effect(() => {
+    const a = wxAt
+    wx = null
+    if (!a) return
+    let live = true
+    getWeather(a.lat, a.lon).then((w) => live && (wx = { ...a, ...w.current })).catch(() => {})
+    return () => (live = false)
+  })
   let centred = false
   $effect(() => {
     if (!me) return void (centred = false)
@@ -605,6 +622,14 @@
       </g>
     {/if}
 
+    {#if wx}
+      <g class="wx" transform="translate({wx.x + 12},{wx.y - 16})" aria-label="Cuaca: {wx.label}, {Math.round(wx.temp)}°C">
+        <rect x="0" y="-11" width="46" height="18" rx="9" />
+        <text x="5" y="2.5" class="wx-i">{wx.icon}</text>
+        <text x="40" y="3" text-anchor="end" class="wx-t">{Math.round(wx.temp)}°</text>
+      </g>
+    {/if}
+
     <g class="legend" transform="translate({SHEET.x + 50},{SHEET.y + SHEET.h - LEG_H + 10})">
       <text class="lg-title" y="0">Legenda</text>
       <text class="lg-head" y="30">Kereta</text>
@@ -686,6 +711,10 @@
 </div>
 
 <style>
+  .wx { pointer-events: none; }
+  .wx rect { fill: #fff; stroke: #d5dbe5; stroke-width: 0.8; }
+  .wx-i { font-size: 11px; }
+  .wx-t { font: 700 11px system-ui, sans-serif; fill: var(--navy); }
   .wrap { position: fixed; inset: 0; z-index: 1; background: #e6eaf0; }
   svg {
     width: 100%; height: 100%; display: block; touch-action: none; user-select: none; cursor: grab;
